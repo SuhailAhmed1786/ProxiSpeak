@@ -1,94 +1,126 @@
-
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const VirtualOffice = () => {
     const canvasRef = useRef(null);
-    // Player position
-        const player = useRef({
-            x: 200,
-            y: 150,
-            radius: 30,
-            speed: 180,            
-            name: "suhail"
-        });
 
+    const [avatar, setAvatar] = useState({
+        x: 200,
+        y: 150,
+    });
 
+    // Keyboard movement
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            setAvatar((current) => {
+                let x = current.x;
+                let y = current.y;
+
+                const speed = 5;
+                const radius = 30;
+
+                switch (event.key) {
+                    case "w":
+                    case "W":
+                    case "ArrowUp":
+                        y -= speed;
+                        break;
+
+                    case "s":
+                    case "S":
+                    case "ArrowDown":
+                        y += speed;
+                        break;
+
+                    case "a":
+                    case "A":
+                    case "ArrowLeft":
+                        x -= speed;
+                        break;
+
+                    case "d":
+                    case "D":
+                    case "ArrowRight":
+                        x += speed;
+                        break;
+
+                    default:
+                        return current;
+                }
+
+                // Boundary checking
+                x = Math.max(
+                    radius,
+                    Math.min(600 - radius, x)
+                );
+
+                y = Math.max(
+                    radius,
+                    Math.min(400 - radius, y)
+                );
+
+                return {
+                    x,
+                    y,
+                };
+            });
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, []);
+
+    // Draw avatar whenever position changes
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
 
-        // Player position
-        let playerX = 200;
-        let playerY = 150;
+        // Clear canvas
+        ctx.clearRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
 
-        const drawPlayer = () => {
-            // Clear previous drawing
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // Draw player
-            ctx.beginPath();
-            ctx.fillStyle = "#2563eb"; // Blue color for the player        
-            ctx.arc(
-                playerX,
-                playerY,
-                30,
-                0,
-                Math.PI * 2
-            );
+        // Background
+        ctx.fillStyle = "#f5f5f5";
+        ctx.fillRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
 
-            ctx.fill();
-        };
+        // Draw avatar
+        ctx.beginPath();
 
-        // Initial drawing
-        drawPlayer();
-       
+        ctx.fillStyle = "#1a58d4";
 
-        // Keyboard event
-        const handleKeyDown = (event) => {
+        ctx.arc(
+            avatar.x,
+            avatar.y,
+            30,
+            0,
+            Math.PI * 2
+        );
 
-            if (event.key === "ArrowUp") {
-                playerY -= 10;
-            }
+        ctx.fill();
 
-            if (event.key === "ArrowDown") {
-                playerY += 10;
-            }
+        // Player name
+        ctx.fillStyle = "#000";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "center";
 
-            if (event.key === "ArrowLeft") {
-                playerX -= 10;
-            }
+        ctx.fillText(
+            "suhail",
+            avatar.x,
+            avatar.y - 40
+        );
 
-            if (event.key === "ArrowRight") {
-                playerX += 10;
-            }
-
-            // Draw player again
-            drawPlayer();
-        };
-
-        // const mouseMoveHandler = (event) => {
-        //     const rect = canvas.getBoundingClientRect();
-        //     const mouseX = event.clientX - rect.left;
-        //     const mouseY = event.clientY - rect.top;  
-        // }
-        
-        
-        const handleKeyUp = (event) => {
-            key.current[event.key.toLowerCase()] = false;
-        }
-
-        window.addEventListener("keydown", handleKeyDown);
-        window.addEventListener("keyup", handleKeyUp);
-        // window.addEventListener("mousemove", mouseMoveHandler);
-
-             
-        // Cleanup
-        return () => {
-            window.removeEventListener(
-                "keydown",
-                handleKeyDown
-            );
-        };
-    }, []);
+    }, [avatar]);
 
     return (
         <canvas
@@ -96,13 +128,10 @@ const VirtualOffice = () => {
             width={600}
             height={400}
             style={{
-                border: "1px solid black"
+                border: "1px solid black",
             }}
         />
     );
 };
 
 export default VirtualOffice;
-
-
-
