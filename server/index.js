@@ -60,7 +60,12 @@ io.on("connection", (socket) => {
   // 2. Movement updates
   socket.on("player:move", async ({ x, y }) => {
     const userId = socketToUser[socket.id];
-    if (!userId) return; // ignore movement before join
+    if (!userId) return;
+
+    if (typeof x !== "number" || typeof y !== "number" || Number.isNaN(x) || Number.isNaN(y)) {
+      console.warn(`Invalid move payload from ${socket.id}:`, { x, y });
+      return;
+    }
 
     try {
       await Player.findOneAndUpdate({ userId }, { x, y, socketId: socket.id });
@@ -92,6 +97,15 @@ io.on("connection", (socket) => {
     } catch (err) {
       console.error("removePlayer error:", err);
     }
+  }
+});
+
+app.get("/api/players", async (req, res) => {
+  try {
+    const players = await Player.find({});
+    res.json(players);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch players" });
   }
 });
 
