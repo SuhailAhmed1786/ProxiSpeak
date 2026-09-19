@@ -1,10 +1,9 @@
 import { useEffect, useRef } from "react";
-import { socket } from "../socket"; // adjust path if socket.js lives elsewhere
+import socket from "../socket";
 
 const VirtualOffice = () => {
     const canvasRef = useRef(null);
 
-    // Local player state
     const player = useRef({
         x: 200,
         y: 150,
@@ -13,32 +12,23 @@ const VirtualOffice = () => {
         name: "suhail",
     });
 
-    // Remote players: { userId: { x, y } }
     const remotePlayers = useRef({});
-
-    // Track pressed keys properly
     const keys = useRef({});
 
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
-
         const width = canvas.width;
         const height = canvas.height;
 
-        // ---------------------------------------
-        // Draw everything
-        // ---------------------------------------
         const draw = () => {
             ctx.clearRect(0, 0, width, height);
 
-            // Local player (blue)
             ctx.beginPath();
             ctx.fillStyle = "#2563eb";
             ctx.arc(player.current.x, player.current.y, player.current.radius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Remote players (red)
             Object.values(remotePlayers.current).forEach((p) => {
                 ctx.beginPath();
                 ctx.fillStyle = "#ef4444";
@@ -47,54 +37,46 @@ const VirtualOffice = () => {
             });
         };
 
-        // ---------------------------------------
-        // Keyboard handling (fixed)
-        // ---------------------------------------
         const handleKeyDown = (event) => {
             keys.current[event.key.toLowerCase()] = true;
         };
-
         const handleKeyUp = (event) => {
-            keys.current[event.key.toLowerCase()] = false; // was "key.current" — bug fixed
+            keys.current[event.key.toLowerCase()] = false;
         };
-
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
 
-        // ---------------------------------------
-        // Movement loop (frame-based, not per-keypress)
-        // ---------------------------------------
         let animationFrameId;
-        let previousTime = performance.now();
-
-        const step = 5; // pixels per frame while a key is held
+        let lastTime = performance.now();
+        const speed = player.current.speed;
 
         const loop = (currentTime) => {
+            const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+            lastTime = currentTime;
+
             const p = player.current;
-            let moved = false;
+            let dirX = 0;
+            let dirY = 0;
 
-            if (keys.current["arrowup"] || keys.current["w"]) {
-                p.y -= step;
-                moved = true;
-            }
-            if (keys.current["arrowdown"] || keys.current["s"]) {
-                p.y += step;
-                moved = true;
-            }
-            if (keys.current["arrowleft"] || keys.current["a"]) {
-                p.x -= step;
-                moved = true;
-            }
-            if (keys.current["arrowright"] || keys.current["d"]) {
-                p.x += step;
-                moved = true;
+            if (keys.current["arrowup"] || keys.current["w"]) dirY -= 1;
+            if (keys.current["arrowdown"] || keys.current["s"]) dirY += 1;
+            if (keys.current["arrowleft"] || keys.current["a"]) dirX -= 1;
+            if (keys.current["arrowright"] || keys.current["d"]) dirX += 1;
+
+            if (dirX !== 0 || dirY !== 0) {
+                const len = Math.hypot(dirX, dirY);
+                dirX /= len;
+                dirY /= len;
             }
 
-            // Basic boundary clamp
+            const moved = dirX !== 0 || dirY !== 0;
+            p.x += dirX * speed * dt;
+            p.y += dirY * speed * dt;
+
             p.x = Math.max(p.radius, Math.min(width - p.radius, p.x));
             p.y = Math.max(p.radius, Math.min(height - p.radius, p.y));
 
-            if (moved) {
+            if (moved && socket.connected) {
                 socket.emit("player:move", { x: p.x, y: p.y });
             }
 
@@ -105,15 +87,25 @@ const VirtualOffice = () => {
         animationFrameId = requestAnimationFrame(loop);
 
         // ---------------------------------------
-        // Socket events
+        // Join only once the socket is actually connected,
+        // and re-join automatically if we ever reconnect
+        // (a reconnect gets a new socket.id, so we must re-register).
         // ---------------------------------------
-        socket.emit("player:join", {
-            userId: socket.id, // fine for now; swap for a persistent id later if you add auth
-            x: player.current.x,
-            y: player.current.y,
-        });
+        const joinWorld = () => {
+            socket.emit("player:join", {
+                userId: socket.id,
+                x: player.current.x,
+                y: player.current.y,
+            });
+        };
+
+        if (socket.connected) {
+            joinWorld();
+        }
+        socket.on("connect", joinWorld);
 
         socket.on("players:current", (players) => {
+            remotePlayers.current = {};
             players.forEach((p) => {
                 if (p.userId !== socket.id) {
                     remotePlayers.current[p.userId] = { x: p.x, y: p.y };
@@ -135,14 +127,13 @@ const VirtualOffice = () => {
             delete remotePlayers.current[userId];
         });
 
-        // ---------------------------------------
-        // Cleanup
-        // ---------------------------------------
         return () => {
             window.removeEventListener("keydown", handleKeyDown);
             window.removeEventListener("keyup", handleKeyUp);
             cancelAnimationFrame(animationFrameId);
+            socket.emit("player:leave");
 
+            socket.off("connect", joinWorld);
             socket.off("players:current");
             socket.off("player:new");
             socket.off("player:moved");
