@@ -4,3 +4,4 @@ const socketUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 const socket = io(socketUrl);
 
 export default socket;
+//socket.js
