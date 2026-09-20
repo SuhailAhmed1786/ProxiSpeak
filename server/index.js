@@ -3,6 +3,7 @@ const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
+// require("./socket/playerSocket");
 
 const connectDB = require("./db");
 const Player = require("./models/Player");
@@ -23,6 +24,30 @@ const io = new Server(server, {
 
 // connect to MongoDB
 connectDB();
+
+
+io.on("connection", (socket) => {
+    console.log("Player connected:", socket.id);
+
+    socket.on("player:move", (position) => {
+        console.log("Player movement:", {
+            playerId: socket.id,
+            x: position.x,
+            y: position.y,
+        });
+
+        // Send movement to other players
+        socket.broadcast.emit("player:move", {
+            playerId: socket.id,
+            x: position.x,
+            y: position.y,
+        });
+    });
+
+    socket.on("disconnect", () => {
+        console.log("Player disconnected:", socket.id);
+    });
+});
 
 // map socket.id -> userId, so we know who disconnected
 const socketToUser = {};
