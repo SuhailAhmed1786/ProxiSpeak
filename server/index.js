@@ -16,37 +16,13 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
 
 // connect to MongoDB
 connectDB();
-
-
-io.on("connection", (socket) => {
-    console.log("Player connected:", socket.id);
-
-    socket.on("player:move", (position) => {
-        console.log("Player movement:", {
-            playerId: socket.id,
-            x: position.x,
-            y: position.y,
-        });
-
-        // Send movement to other players
-        socket.broadcast.emit("player:move", {
-            playerId: socket.id,
-            x: position.x,
-            y: position.y,
-        });
-    });
-
-    socket.on("disconnect", () => {
-        console.log("Player disconnected:", socket.id);
-    });
-});
 
 // map socket.id -> userId, so we know who disconnected
 const socketToUser = {};
@@ -82,15 +58,29 @@ io.on("connection", (socket) => {
   });
 
   // 2. Movement updates
+  const lastDbWrite = {};
+
   socket.on("player:move", async ({ x, y }) => {
     const userId = socketToUser[socket.id];
-    if (!userId) return; // ignore movement before join
+    if (!userId) return;
 
-    try {
-      await Player.findOneAndUpdate({ userId }, { x, y, socketId: socket.id });
-      socket.broadcast.emit("player:moved", { userId, x, y });
-    } catch (err) {
-      console.error("player:move error:", err);
+    if (typeof x !== "number" || typeof y !== "number" || Number.isNaN(x) || Number.isNaN(y)) {
+      console.warn(`Invalid move payload from ${socket.id}:`, { x, y });
+      return;
+    }
+
+    // broadcast every frame for smooth motion
+    socket.broadcast.emit("player:moved", { userId, x, y });
+
+    // persist to Mongo at most every 100ms per user
+    const now = Date.now();
+    if (!lastDbWrite[userId] || now - lastDbWrite[userId] > 100) {
+      lastDbWrite[userId] = now;
+      try {
+        await Player.findOneAndUpdate({ userId }, { x, y, socketId: socket.id });
+      } catch (err) {
+        console.error("player:move error:", err);
+      }
     }
   });
 
@@ -119,6 +109,18 @@ io.on("connection", (socket) => {
   }
 });
 
-server.listen(5000, () => {
-  console.log("Server running on port 5000");
+app.get("/api/players", async (req, res) => {
+  try {
+    const players = await Player.find({});
+    res.json(players);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch players" });
+  }
 });
+
+const PORT = process.env.PORT || 5000;
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+//server.js
