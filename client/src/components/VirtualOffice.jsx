@@ -36,7 +36,6 @@ const VirtualOffice = () => {
     useEffect(() => {
     const handleConnect = () => {
         console.log("Connected:", socket.id);
-
         socket.emit("player:join", {
             playerId: socket.id,
             x: player.current.x,
