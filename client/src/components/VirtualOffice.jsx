@@ -14,10 +14,10 @@ const VirtualOffice = () => {
       // Player position
     const player = useRef({
         x: 200,
-        y: 200,
-        radius: 20,
+        y: 150,
+        radius: 30,
         speed: 180,
-        name: "Suhail",
+        name: "suhail",
     });
  
    
@@ -61,11 +61,9 @@ const VirtualOffice = () => {
         const handleKeyDown = (event) => {
             keys.current[event.key.toLowerCase()] = true;
         };
-
         const handleKeyUp = (event) => {
             keys.current[event.key.toLowerCase()] = false;
         };
-
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
 
@@ -418,13 +416,16 @@ const VirtualOffice = () => {
         const height = canvas.height;
 
         let animationFrameId;
-        let previousTime = performance.now();
+        let lastTime = performance.now();
+        const speed = player.current.speed;
 
-        const gameLoop = (currentTime) => {
-            const deltaTime =
-                (currentTime - previousTime) / 1000;
+        const loop = (currentTime) => {
+            const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+            lastTime = currentTime;
 
-            previousTime = currentTime;
+            const p = player.current;
+            let dirX = 0;
+            let dirY = 0;
 
             // Update local player
             const moved = updatePlayer(deltaTime);
@@ -467,12 +468,11 @@ const VirtualOffice = () => {
                 );
             });
 
-            animationFrameId =
-                requestAnimationFrame(gameLoop);
+            draw();
+            animationFrameId = requestAnimationFrame(loop);
         };
 
-        animationFrameId =
-            requestAnimationFrame(gameLoop);
+        animationFrameId = requestAnimationFrame(loop);
 
         return () => {
             cancelAnimationFrame(
