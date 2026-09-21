@@ -1,148 +1,17 @@
-// import { useEffect, useRef, useState } from "react";
-
-// const VirtualOffice = () => {
-//     const canvasRef = useRef(null);
-
-//     const [avatar, setAvatar] = useState({
-//         x: 200,
-//         y: 150,
-//     });
-
-//     // Keyboard movement
-//     useEffect(() => {
-//         const handleKeyDown = (event) => {
-//             setAvatar((current) => {
-//                 let x = current.x;
-//                 let y = current.y;
-
-//                 const speed = 5;
-//                 const radius = 30;
-
-//                 switch (event.key) {
-//                     case "w":
-//                     case "W":
-//                     case "ArrowUp":
-//                         y -= speed;
-//                         break;
-
-//                     case "s":
-//                     case "S":
-//                     case "ArrowDown":
-//                         y += speed;
-//                         break;
-
-//                     case "a":
-//                     case "A":
-//                     case "ArrowLeft":
-//                         x -= speed;
-//                         break;
-
-//                     case "d":
-//                     case "D":
-//                     case "ArrowRight":
-//                         x += speed;
-//                         break;
-
-//                     default:
-//                         return current;
-//                 }
-
-//                 // Boundary checking
-//                 x = Math.max(
-//                     radius,
-//                     Math.min(600 - radius, x)
-//                 );
-
-//                 y = Math.max(
-//                     radius,
-//                     Math.min(400 - radius, y)
-//                 );
-
-//                 return {
-//                     x,
-//                     y,
-//                 };
-//             });
-//         };
-
-//         window.addEventListener("keydown", handleKeyDown);
-
-//         return () => {
-//             window.removeEventListener("keydown", handleKeyDown);
-//         };
-//     }, []);
-
-//     // Draw avatar whenever position changes
-//     useEffect(() => {
-//         const canvas = canvasRef.current;
-//         const ctx = canvas.getContext("2d");
-
-//         // Clear canvas
-//         ctx.clearRect(
-//             0,
-//             0,
-//             canvas.width,
-//             canvas.height
-//         );
-
-//         // Background
-//         ctx.fillStyle = "#f5f5f5";
-//         ctx.fillRect(
-//             0,
-//             0,
-//             canvas.width,
-//             canvas.height
-//         );
-
-//         // Draw avatar
-//         ctx.beginPath();
-
-//         ctx.fillStyle = "#1a58d4";
-
-//         ctx.arc(
-//             avatar.x,
-//             avatar.y,
-//             30,
-//             0,
-//             Math.PI * 2
-//         );
-
-//         ctx.fill();
-
-//         // Player name
-//         ctx.fillStyle = "#000";
-//         ctx.font = "14px Arial";
-//         ctx.textAlign = "center";
-
-//         ctx.fillText(
-//             "suhail",
-//             avatar.x,
-//             avatar.y - 40
-//         );
-
-//     }, [avatar]);
-
-//     return (
-//         <canvas
-//             ref={canvasRef}
-//             width={600}
-//             height={400}
-//             style={{
-//                 border: "1px solid black",
-//             }}
-//         />
-//     );
-// };
-
-// export default VirtualOffice;
-
-
 import { useEffect, useRef } from "react";
+import socket from "../socket";
 
 const VirtualOffice = () => {
+
+     const remotePlayers = useRef({});
+   // Keyboard state
+    const keys = useRef({});
+    // Used to limit socket messages
+    const lastEmitTime = useRef(0);
+
     const canvasRef = useRef(null);
 
-    // Player position
+      // Player position
     const player = useRef({
         x: 200,
         y: 200,
@@ -150,43 +19,47 @@ const VirtualOffice = () => {
         speed: 180,
         name: "Suhail",
     });
+ 
+   
+    //socket connection
+    // useEffect(() => {
+    //     socket.on("connect", () => {
+    //         console.log("Connected to server:", socket.id);
+    //     });
 
-    // Second dummy user
-    const dummyPlayer = useRef({
-        x: 650,
-        y: 350,
-        radius: 20,
-        name: "vineet",
-    });
+    //     return () => {
+    //         socket.off("connect");
+    //     };
+    // }, []);
 
-    // Keyboard state
-    const keys = useRef({});
 
     useEffect(() => {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
+    const handleConnect = () => {
+        console.log("Connected:", socket.id);
 
-        const width = 1000;
-        const height = 600;
+        socket.emit("player:join", {
+            playerId: socket.id,
+            x: player.current.x,
+            y: player.current.y,
+            name: player.current.name,
+        });
+    };
 
-        canvas.width = width;
-        canvas.height = height;
+    socket.on("connect", handleConnect);
 
-        // ---------------------------------------
-        // Keyboard Events
-        // ---------------------------------------
+    if (socket.connected) {
+        handleConnect();
+    }
 
+    return () => {
+        socket.off("connect", handleConnect);
+    };
+}, []);
+
+
+    useEffect(() => {
         const handleKeyDown = (event) => {
             keys.current[event.key.toLowerCase()] = true;
-
-            // Prevent page scrolling with arrow keys
-            if (
-                ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(
-                    event.key.toLowerCase()
-                )
-            ) {
-                event.preventDefault();
-            }
         };
 
         const handleKeyUp = (event) => {
@@ -196,218 +69,353 @@ const VirtualOffice = () => {
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
 
-        // ---------------------------------------
-        // Draw Background
-        // ---------------------------------------
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("keyup", handleKeyUp);
+        };
+    }, []);
 
-        const drawOffice = () => {
-            // Background
-            ctx.fillStyle = "#f1f5f9";
-            ctx.fillRect(0, 0, width, height);
+     // --------------------------------------------------
+    // GET EXISTING PLAYERS
+    // --------------------------------------------------
 
-            // Office border
-            ctx.strokeStyle = "#334155";
-            ctx.lineWidth = 4;
+    useEffect(() => {
+    const handlePlayersList = (players) => {
+        console.log("Existing players:", players);
 
-            ctx.strokeRect(
-                20,
-                20,
-                width - 40,
-                height - 40
-            );
+        remotePlayers.current = {};
 
-            // Grid
-            ctx.strokeStyle = "#e2e8f0";
-            ctx.lineWidth = 1;
-
-            const gridSize = 40;
-
-            for (let x = 20; x <= width - 20; x += gridSize) {
-                ctx.beginPath();
-                ctx.moveTo(x, 20);
-                ctx.lineTo(x, height - 20);
-                ctx.stroke();
+        players.forEach((remotePlayer) => {
+            if (remotePlayer.playerId === socket.id) {
+                return;
             }
 
-            for (let y = 20; y <= height - 20; y += gridSize) {
-                ctx.beginPath();
-                ctx.moveTo(20, y);
-                ctx.lineTo(width - 20, y);
-                ctx.stroke();
+            remotePlayers.current[remotePlayer.playerId] = {
+                x: remotePlayer.x,
+                y: remotePlayer.y,
+                radius: 20,
+                name: remotePlayer.name || remotePlayer.playerId,
+            };
+        });
+    };
+
+    socket.on("players:list", handlePlayersList);
+
+    return () => {
+        socket.off("players:list", handlePlayersList);
+    };
+}, []);
+
+    // NEW PLAYER JOINED
+    // --------------------------------------------------
+
+    useEffect(() => {
+        const handlePlayerJoin = (remotePlayer) => {
+            console.log("Player joined:", remotePlayer);
+
+            if (remotePlayer.playerId === socket.id) {
+                return;
             }
 
-            // ---------------------------------------
-            // Office Furniture
-            // ---------------------------------------
-
-            // Table 1
-            ctx.fillStyle = "#cbd5e1";
-            ctx.fillRect(100, 100, 160, 70);
-
-            ctx.fillStyle = "#475569";
-            ctx.font = "14px Arial";
-            ctx.fillText("Meeting Table", 135, 140);
-
-            // Table 2
-            ctx.fillStyle = "#cbd5e1";
-            ctx.fillRect(700, 100, 180, 70);
-
-            ctx.fillStyle = "#475569";
-            ctx.fillText("Work Table", 760, 140);
-
-            // Meeting room
-            ctx.strokeStyle = "#64748b";
-            ctx.lineWidth = 2;
-
-            ctx.strokeRect(100, 400, 250, 120);
-
-            ctx.fillStyle = "#475569";
-            ctx.font = "16px Arial";
-            ctx.fillText("Meeting Room", 165, 465);
-
-            // Small desk
-            ctx.fillStyle = "#94a3b8";
-            ctx.fillRect(500, 450, 150, 50);
-
-            ctx.fillStyle = "#334155";
-            ctx.font = "14px Arial";
-            ctx.fillText("Desk", 555, 480);
+            remotePlayers.current[remotePlayer.playerId] = {
+                x: remotePlayer.x,
+                y: remotePlayer.y,
+                radius: 20,
+                name: remotePlayer.name || remotePlayer.playerId,
+            };
         };
 
-        // ---------------------------------------
-        // Draw Avatar
-        // ---------------------------------------
+        socket.on("player:join", handlePlayerJoin);
 
-        const drawAvatar = (user, isCurrentUser = false) => {
-            // Avatar circle
+        return () => {
+            socket.off("player:join", handlePlayerJoin);
+        };
+    }, []);
+
+   
+ // REMOTE PLAYER MOVEMENT
+
+    useEffect(() => {
+        const handlePlayerMove = (data) => {
+            // Don't update ourselves
+            if (data.playerId === socket.id) {
+                return;
+            }
+
+            if (!remotePlayers.current[data.playerId]) {
+                remotePlayers.current[data.playerId] = {
+                    x: data.x,
+                    y: data.y,
+                    radius: 20,
+                    name: data.name || data.playerId,
+                };
+            } else {
+                remotePlayers.current[data.playerId].x = data.x;
+                remotePlayers.current[data.playerId].y = data.y;
+            }
+        };
+
+        socket.on("player:move", handlePlayerMove);
+
+        return () => {
+            socket.off("player:move", handlePlayerMove);
+        };
+    }, []);
+
+     // --------------------------------------------------
+    // REMOTE PLAYER LEFT
+    // --------------------------------------------------
+
+    useEffect(() => {
+        const handlePlayerLeave = (data) => {
+            console.log("Player left:", data.playerId);
+
+            delete remotePlayers.current[data.playerId];
+        };
+
+        socket.on("player:leave", handlePlayerLeave);
+
+        return () => {
+            socket.off("player:leave", handlePlayerLeave);
+        };
+    }, []);
+
+     const drawOffice = (ctx, width, height) => {
+        // Background
+        ctx.fillStyle = "#f1f5f9";
+        ctx.fillRect(0, 0, width, height);
+
+        // Office border
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(
+            20,
+            20,
+            width - 40,
+            height - 40
+        );
+
+        // Grid
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+
+        const gridSize = 40;
+        for (let x = 20; x <= width - 20; x += gridSize) {
             ctx.beginPath();
-
-            ctx.arc(
-                user.x,
-                user.y,
-                user.radius,
-                0,
-                Math.PI * 2
-            );
-
-            ctx.fillStyle = isCurrentUser
-                ? "#2563eb"
-                : "#ef4444";
-
-            ctx.fill();
-
-            // Avatar border
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 3;
+            ctx.moveTo(x, 20);
+            ctx.lineTo(x, height - 20);
             ctx.stroke();
+        }
 
-            // Name background
-            ctx.font = "14px Arial";
-
-            const textWidth = ctx.measureText(user.name).width;
-
-            ctx.fillStyle = "rgba(255,255,255,0.9)";
-
-            ctx.fillRect(
-                user.x - textWidth / 2 - 6,
-                user.y + user.radius + 5,
-                textWidth + 12,
-                22
-            );
-
-            // Name
-            ctx.fillStyle = "#0f172a";
-
-            ctx.fillText(
-                user.name,
-                user.x - textWidth / 2,
-                user.y + user.radius + 20
-            );
-        };
+        for (let y = 20; y <= height - 20; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(20, y);
+            ctx.lineTo(width - 20, y);
+            ctx.stroke();
+        }
 
         // ---------------------------------------
-        // Update Player Movement
+        // Office Furniture
         // ---------------------------------------
 
-        const updatePlayer = (deltaTime) => {
-            const p = player.current;
+        // Table 1
+        ctx.fillStyle = "#cbd5e1";
+        ctx.fillRect(100, 100, 160, 70);
 
-            let directionX = 0;
-            let directionY = 0;
+        ctx.fillStyle = "#475569";
+        ctx.font = "14px Arial";
+        ctx.fillText("Meeting Table", 135, 140);
 
-            // WASD
-            if (keys.current["w"]) {
-                directionY -= 1;
-            }
+        // Table 2
+        ctx.fillStyle = "#cbd5e1";
+        ctx.fillRect(700, 100, 180, 70);
 
-            if (keys.current["s"]) {
-                directionY += 1;
-            }
+        ctx.fillStyle = "#475569";
+        ctx.fillText("Work Table", 760, 140);
 
-            if (keys.current["a"]) {
-                directionX -= 1;
-            }
+        // Meeting room
+        ctx.strokeStyle = "#64748b";
+        ctx.lineWidth = 2;
 
-            if (keys.current["d"]) {
-                directionX += 1;
-            }
+        ctx.strokeRect(100, 400, 250, 120);
 
-            // Arrow keys
-            if (keys.current["arrowup"]) {
-                directionY -= 1;
-            }
+        ctx.fillStyle = "#475569";
+        ctx.font = "16px Arial";
+        ctx.fillText("Meeting Room", 165, 465);
 
-            if (keys.current["arrowdown"]) {
-                directionY += 1;
-            }
+        // Small desk
+        ctx.fillStyle = "#94a3b8";
+        ctx.fillRect(500, 450, 150, 50);
 
-            if (keys.current["arrowleft"]) {
-                directionX -= 1;
-            }
+        ctx.fillStyle = "#334155";
+        ctx.font = "14px Arial";
+        ctx.fillText("Desk", 555, 480);
+    };
 
-            if (keys.current["arrowright"]) {
-                directionX += 1;
-            }
+    // ---------------------------------------
+    // Draw Avatar
+    // ---------------------------------------
 
-            // Normalize diagonal movement
-            if (directionX !== 0 || directionY !== 0) {
-                const length = Math.sqrt(
-                    directionX * directionX +
-                    directionY * directionY
-                );
+   const drawAvatar = (ctx, user, isCurrentUser = false) => {
+        if (!user) return;
 
-                directionX /= length;
-                directionY /= length;
-            }
+        // Player circle
+        ctx.beginPath();
+        ctx.arc(
+            user.x,
+            user.y,
+            user.radius,
+            0,
+            Math.PI * 2
+        );
 
-            // Update position
-            p.x += directionX * p.speed * deltaTime;
-            p.y += directionY * p.speed * deltaTime;
+        ctx.fillStyle = isCurrentUser
+            ? "#2563eb"
+            : "#ef4444";
 
-            // ---------------------------------------
-            // Boundary Collision
-            // ---------------------------------------
+        ctx.fill();
 
-            const minX = 20 + p.radius;
-            const maxX = width - 20 - p.radius;
+        // Border
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 3;
+        ctx.stroke();
 
-            const minY = 20 + p.radius;
-            const maxY = height - 20 - p.radius;
+        // Player name background
+        const name = user.name || "Player";
 
-            p.x = Math.max(
-                minX,
-                Math.min(maxX, p.x)
-            );
+        ctx.font = "bold 12px Arial";
 
-            p.y = Math.max(
-                minY,
-                Math.min(maxY, p.y)
-            );
-        };
+        const textWidth = ctx.measureText(name).width;
 
-        // ---------------------------------------
-        // Animation Loop
-        // ---------------------------------------
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+
+        ctx.fillRect(
+            user.x - textWidth / 2 - 5,
+            user.y - user.radius - 25,
+            textWidth + 10,
+            18
+        );
+
+        // Player name
+        ctx.fillStyle = "#ffffff";
+
+        ctx.textAlign = "center";
+        ctx.fillText(
+            name,
+            user.x,
+            user.y - user.radius - 12
+        );
+
+        ctx.textAlign = "left";
+    };
+
+    // ---------------------------------------
+    // Update Player Movement
+    // ---------------------------------------
+
+     const updatePlayer = (deltaTime) => {
+        const p = player.current;
+
+        let dx = 0;
+        let dy = 0;
+
+        // W / Arrow Up
+        if (
+            keys.current["w"] ||
+            keys.current["arrowup"]
+        ) {
+            dy -= 1;
+        }
+
+        // S / Arrow Down
+        if (
+            keys.current["s"] ||
+            keys.current["arrowdown"]
+        ) {
+            dy += 1;
+        }
+
+        // A / Arrow Left
+        if (
+            keys.current["a"] ||
+            keys.current["arrowleft"]
+        ) {
+            dx -= 1;
+        }
+
+        // D / Arrow Right
+        if (
+            keys.current["d"] ||
+            keys.current["arrowright"]
+        ) {
+            dx += 1;
+        }
+
+        // No movement
+        if (dx === 0 && dy === 0) {
+            return false;
+        }
+
+        // Normalize diagonal movement
+        const length = Math.sqrt(
+            dx * dx + dy * dy
+        );
+
+        dx /= length;
+        dy /= length;
+
+        // Update position
+        p.x += dx * p.speed * deltaTime;
+        p.y += dy * p.speed * deltaTime;
+
+        // Canvas dimensions
+        const width = 1000;
+        const height = 600;
+
+        // Boundary checking
+        p.x = Math.max(
+            p.radius,
+            Math.min(width - p.radius, p.x)
+        );
+
+        p.y = Math.max(
+            p.radius,
+            Math.min(height - p.radius, p.y)
+        );
+
+        return true;
+    };
+
+    // SEND PLAYER POSITION
+    // --------------------------------------------------
+
+    const sendPlayerPosition = (currentTime) => {
+        // Send maximum around 20 times per second
+        if (currentTime - lastEmitTime.current < 50) {
+            return;
+        }
+
+        lastEmitTime.current = currentTime;
+
+        socket.emit("player:move", {
+            x: player.current.x,
+            y: player.current.y,
+            name: player.current.name,
+        });
+    };
+
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+
+        if (!canvas) {
+            return;
+        }
+
+        const ctx = canvas.getContext("2d");
+
+        const width = canvas.width;
+        const height = canvas.height;
 
         let animationFrameId;
         let previousTime = performance.now();
@@ -418,10 +426,15 @@ const VirtualOffice = () => {
 
             previousTime = currentTime;
 
-            // Update player
-            updatePlayer(deltaTime);
+            // Update local player
+            const moved = updatePlayer(deltaTime);
 
-            // Clear Canvas
+            // Send movement if player moved
+            if (moved) {
+                sendPlayerPosition(currentTime);
+            }
+
+            // Clear canvas
             ctx.clearRect(
                 0,
                 0,
@@ -429,18 +442,30 @@ const VirtualOffice = () => {
                 height
             );
 
-            // Draw everything
-            drawOffice();
+            // Draw office
+            drawOffice(
+                ctx,
+                width,
+                height
+            );
 
+            // Draw local player
             drawAvatar(
+                ctx,
                 player.current,
                 true
             );
 
-            drawAvatar(
-                dummyPlayer.current,
-                false
-            );
+            // Draw all remote players
+            Object.values(
+                remotePlayers.current
+            ).forEach((remotePlayer) => {
+                drawAvatar(
+                    ctx,
+                    remotePlayer,
+                    false
+                );
+            });
 
             animationFrameId =
                 requestAnimationFrame(gameLoop);
@@ -449,62 +474,59 @@ const VirtualOffice = () => {
         animationFrameId =
             requestAnimationFrame(gameLoop);
 
-        // ---------------------------------------
-        // Cleanup
-        // ---------------------------------------
-
         return () => {
-            window.removeEventListener(
-                "keydown",
-                handleKeyDown
-            );
-
-            window.removeEventListener(
-                "keyup",
-                handleKeyUp
-            );
-
             cancelAnimationFrame(
                 animationFrameId
             );
         };
     }, []);
-
+   
     return (
         <div
             style={{
-                width: "100%",
-                overflowX: "auto",
+                padding: "20px",
+                textAlign: "center",
             }}
         >
+            <h2>Proxy Speak Virtual Office</h2>
+
+            <p>
+                Use <strong>W A S D</strong> or
+                <strong> Arrow Keys </strong>
+                to move.
+            </p>
+
             <canvas
                 ref={canvasRef}
+                width={1000}
+                height={600}
                 style={{
-                    display: "block",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "12px",
+                    border: "1px solid #333",
+                    backgroundColor: "#f5f5f5",
                     maxWidth: "100%",
-                    backgroundColor: "#f1f5f9",
                 }}
             />
 
             <div
                 style={{
-                    marginTop: "15px",
-                    padding: "12px 16px",
-                    backgroundColor: "#f8fafc",
-                    borderRadius: "8px",
-                    border: "1px solid #e2e8f0",
-                    fontFamily: "Arial",
-                    color: "#334155",
+                    marginTop: "10px",
                 }}
             >
-                <strong>Controls:</strong>{" "}
-                Use <b>W A S D</b> or{" "}
-                <b>Arrow Keys</b> to move your avatar.
+                <span
+                    style={{
+                        marginRight: "20px",
+                    }}
+                >
+                    🔵 You
+                </span>
+
+                <span>
+                    🔴 Other Players
+                </span>
             </div>
         </div>
     );
 };
 
 export default VirtualOffice;
+
