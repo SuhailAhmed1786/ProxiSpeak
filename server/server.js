@@ -132,7 +132,27 @@ io.on("connection", (socket) => {
     }
   }
 });
+const PROXIMITY_RADIUS = 100;
 
+// in-memory cache of last known positions, keyed by userId
+// (avoids a DB read on every signaling message)
+const playerPositions = {};
+
+function isNearby(userIdA, userIdB) {
+  const a = playerPositions[userIdA];
+  const b = playerPositions[userIdB];
+  if (!a || !b) return false;
+
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.hypot(dx, dy) <= PROXIMITY_RADIUS;
+}
+
+function getSocketIdForUser(userId) {
+  return Object.keys(socketToUser).find(
+    (socketId) => socketToUser[socketId] === userId
+  );
+}
 app.get("/api/players", async (req, res) => {
   try {
     const players = await Player.find({});
