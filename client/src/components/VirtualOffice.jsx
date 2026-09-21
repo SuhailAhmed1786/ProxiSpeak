@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import socket from "../socket";
 
 const VirtualOffice = () => {
@@ -14,10 +14,10 @@ const VirtualOffice = () => {
       // Player position
     const player = useRef({
         x: 200,
-        y: 150,
-        radius: 30,
+        y: 200,
+        radius: 20,
         speed: 180,
-        name: "suhail",
+        name: "Suhail",
     });
  
    
@@ -61,9 +61,11 @@ const VirtualOffice = () => {
         const handleKeyDown = (event) => {
             keys.current[event.key.toLowerCase()] = true;
         };
+
         const handleKeyUp = (event) => {
             keys.current[event.key.toLowerCase()] = false;
         };
+
         window.addEventListener("keydown", handleKeyDown);
         window.addEventListener("keyup", handleKeyUp);
 
@@ -416,16 +418,13 @@ const VirtualOffice = () => {
         const height = canvas.height;
 
         let animationFrameId;
-        let lastTime = performance.now();
-        const speed = player.current.speed;
+        let previousTime = performance.now();
 
-        const loop = (currentTime) => {
-            const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
-            lastTime = currentTime;
+        const gameLoop = (currentTime) => {
+            const deltaTime =
+                (currentTime - previousTime) / 1000;
 
-            const p = player.current;
-            let dirX = 0;
-            let dirY = 0;
+            previousTime = currentTime;
 
             // Update local player
             const moved = updatePlayer(deltaTime);
@@ -468,11 +467,12 @@ const VirtualOffice = () => {
                 );
             });
 
-            draw();
-            animationFrameId = requestAnimationFrame(loop);
+            animationFrameId =
+                requestAnimationFrame(gameLoop);
         };
 
-        animationFrameId = requestAnimationFrame(loop);
+        animationFrameId =
+            requestAnimationFrame(gameLoop);
 
         return () => {
             cancelAnimationFrame(
