@@ -58,6 +58,7 @@ io.on("connection", (socket) => {
   socket.on("player:join", async ({ userId, x = 0, y = 0 } = {}) => {
     const finalUserId = userId || uuidv4();
     socketToUser[socket.id] = finalUserId;
+    playerPositions[finalUserId] = { x, y };
 
     try {
       // upsert: create if new, update socketId/position if reconnecting
@@ -94,6 +95,7 @@ io.on("connection", (socket) => {
     }
 
     // broadcast every frame for smooth motion
+    playerPositions[userId] = { x, y };
     socket.broadcast.emit("player:moved", { userId, x, y });
 
     // persist to Mongo at most every 100ms per user
@@ -126,6 +128,8 @@ io.on("connection", (socket) => {
     try {
       await Player.deleteOne({ userId });
       delete socketToUser[socket.id];
+      delete playerPositions[userId];
+      delete lastDbWrite[userId];
       io.emit("player:left", { userId });
     } catch (err) {
       console.error("removePlayer error:", err);
