@@ -1,5 +1,29 @@
 import socket from "./socket";
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const gainNodes = {}; // userId -> GainNode
 
+function setupAudioGraph(remoteUserId, stream) {
+  const source = audioContext.createMediaStreamSource(stream);
+  const gainNode = audioContext.createGain();
+  gainNode.gain.value = 1; // start at full volume
+
+  source.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+
+  gainNodes[remoteUserId] = gainNode;
+}
+
+export function setRemoteVolume(remoteUserId, volume) {
+  const gainNode = gainNodes[remoteUserId];
+  if (gainNode) {
+    // clamp 0..1 just in case
+    gainNode.gain.value = Math.max(0, Math.min(1, volume));
+  }
+}
+
+export function removeAudioGraph(remoteUserId) {
+  delete gainNodes[remoteUserId];
+}
 const peerConnections = {}; // userId -> RTCPeerConnection
 let localStream = null;
 
@@ -29,7 +53,9 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
   };
 
   pc.ontrack = (event) => {
-    onRemoteStream(remoteUserId, event.streams[0]);
+    const stream = event.streams[0];
+    setupAudioGraph(remoteUserId, stream);
+    onRemoteStream(remoteUserId, stream); // keep this if you still want an <audio> el for autoplay purposes
   };
 
   peerConnections[remoteUserId] = pc;
