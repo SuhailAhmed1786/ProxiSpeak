@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import socket from "../socket";
-import { initLocalAudio, callPeer, setupSignalingListeners, closePeer, closeAllPeers } from "../webrtc";
+import { initLocalAudio, callPeer, setupSignalingListeners, closePeer, closeAllPeers,setRemoteVolume } from "../webrtc";
 
 const PROXIMITY_RADIUS = 100;
 
@@ -147,12 +147,16 @@ const VirtualOffice = () => {
 
             const dist = Math.hypot(player.current.x - x, player.current.y - y);
 
-            if (dist <= PROXIMITY_RADIUS && socket.id < userId) {
-                // only the "smaller" id initiates, to avoid both sides calling simultaneously
-                callPeer(userId, attachRemoteAudio);
-            } else if (dist > PROXIMITY_RADIUS) {
-                closePeer(userId);
-                removeRemoteAudio(userId);
+            if (dist <= PROXIMITY_RADIUS) {
+            if (!peerExists(userId)) {
+                if (socket.id < userId) callPeer(userId, attachRemoteAudio);
+            }
+            // linear falloff: 1.0 at distance 0, 0.0 at the radius edge
+            const volume = 1 - dist / PROXIMITY_RADIUS;
+            setRemoteVolume(userId, volume);
+            } else {
+            closePeer(userId);
+            removeRemoteAudio(userId);
             }
         };
 
