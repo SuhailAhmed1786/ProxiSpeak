@@ -58,7 +58,6 @@ const VirtualOffice = () => {
     useEffect(() => {
         const handleConnect = () => {
             console.log("Connected:", socket.id);
-
             socket.emit("player:join", {
                 playerId: socket.id,
                 x: player.current.x,
@@ -68,7 +67,6 @@ const VirtualOffice = () => {
         };
 
         socket.on("connect", handleConnect);
-
         if (socket.connected) {
             handleConnect();
         }
@@ -104,9 +102,7 @@ const VirtualOffice = () => {
     useEffect(() => {
         const handlePlayersList = (players) => {
             console.log("Existing players:", players);
-
             remotePlayers.current = {};
-
             players.forEach((remotePlayer) => {
                 if (remotePlayer.playerId === socket.id) {
                     return;
