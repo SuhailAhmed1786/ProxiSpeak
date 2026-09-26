@@ -1,44 +1,41 @@
 import Player from "../models/Player.js";
 
-let playerSocket = (io) => {
+const playerSocket = (io) => {
     console.log("Player socekt calling!!")
   io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
 
-    socket.on("player:join", async ({ userId, x = 100, y = 100 }) => {
-      try {
-        const playerX = Number(x);
-        const playerY = Number(y);
+    socket.on("player:join", async ({ userId, x = 200, y = 200 }) => {
+  try {
+    x = Number(x);
+    y = Number(y);
 
-        if (!Number.isFinite(playerX) || !Number.isFinite(playerY)) {
-          console.error("Invalid coordinates:", { x, y });
-          return;
-        }
+    const player = await Player.findOneAndUpdate(
+      { userId },
+      {
+        userId,
+        socketId: socket.id,
+        x,
+        y,
 
-        const player = await Player.findOneAndUpdate(
-          { userId },
-          {
-            userId,
-            socketId: socket.id,
-            x: playerX,
-            y: playerY,
-            location: {
-              type: "Point",
-              coordinates: [playerX, playerY],
-            },
-          },
-          {
-            new: true,
-            upsert: true,
-            runValidators: true,
-          }
-        );
-
-        console.log("Player joined:", player);
-      } catch (error) {
-        console.error("player:join error:", error);
+        location: {
+          type: "Point",
+          coordinates: [x, y],
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
       }
-    });
+    );
+
+    console.log("Player saved:", player);
+
+  } catch (error) {
+    console.error("Player join error:", error);
+  }
+});
 
     socket.on("player:move", async ({ userId, x, y }) => {
       try {

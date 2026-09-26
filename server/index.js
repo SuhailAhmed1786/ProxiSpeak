@@ -1,5 +1,4 @@
 
-
 import express from "express";
 // const http = require("http");
 import http from "http";
@@ -14,10 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import connectDB from './db.js';
 // const connectDB = require("./db");
 
-
 const app = express();
-
-
 app.use(cors());
 app.use(express.json());
 
@@ -74,7 +70,13 @@ io.on("connection", (socket) => {
       const player = await Player.findOneAndUpdate(
         { userId: finalUserId },
         { userId: finalUserId, x, y, socketId: socket.id },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
+
+        console.log("Player joined:", {
+          userId: finalUserId,
+          x,
+          y
+        }),
       );
 
       // send the current full player list to the newly joined client

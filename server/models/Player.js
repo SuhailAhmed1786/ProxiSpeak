@@ -25,23 +25,26 @@ const playerSchema = new mongoose.Schema(
       default: 100,
     },
 
-    location: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        required: true,
-        // default: "Point",
-      },
+    $set: {
+      location: {
+        type: {
+          type: String,
+          enum: ["Point"],
+          default: "Point",
+        },
+        coordinates: {
+          type: [Number],
+          default: [100, 100],
+        },
+      }
+    }
 
-      coordinates: {
-        type: [Number],
-        required: true,
-      },
-    },
+
   },
   {
     timestamps: true,
   }
+  
 );
 playerSchema.index({ location: "2dsphere" });
 module.exports = mongoose.model("Player", playerSchema);
