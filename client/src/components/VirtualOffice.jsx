@@ -1,6 +1,15 @@
 import { useEffect, useRef } from "react";
 import socket from "../socket";
-import { initLocalAudio, callPeer, setupSignalingListeners, closePeer, closeAllPeers,setRemoteVolume } from "../webrtc";
+import {
+    initLocalAudio,
+    callPeer,
+    setupSignalingListeners,
+    closePeer,
+    closeAllPeers,
+    setRemoteVolume,
+    setRemotePan,
+    peerExists,
+} from "../webrtc";
 
 const PROXIMITY_RADIUS = 100;
 
@@ -18,9 +27,6 @@ const VirtualOffice = () => {
         name: "Suhail",
     });
 
-    // ---------------------------------------
-    // Helper: attach/remove remote audio elements
-    // ---------------------------------------
     const attachRemoteAudio = (remoteUserId, stream) => {
         let audioEl = document.getElementById(`audio-${remoteUserId}`);
         if (!audioEl) {
@@ -37,9 +43,6 @@ const VirtualOffice = () => {
         if (audioEl) audioEl.remove();
     };
 
-    // ---------------------------------------
-    // Connection, join, WebRTC setup
-    // ---------------------------------------
     useEffect(() => {
         initLocalAudio().catch((err) => console.error("Mic access denied:", err));
 
@@ -68,9 +71,6 @@ const VirtualOffice = () => {
         };
     }, []);
 
-    // ---------------------------------------
-    // Keyboard input
-    // ---------------------------------------
     useEffect(() => {
         const handleKeyDown = (event) => {
             keys.current[event.key.toLowerCase()] = true;
@@ -88,9 +88,6 @@ const VirtualOffice = () => {
         };
     }, []);
 
-    // ---------------------------------------
-    // Existing players on join
-    // ---------------------------------------
     useEffect(() => {
         const handlePlayersCurrent = (players) => {
             console.log("Existing players:", players);
@@ -111,9 +108,6 @@ const VirtualOffice = () => {
         return () => socket.off("players:current", handlePlayersCurrent);
     }, []);
 
-    // ---------------------------------------
-    // New player joined
-    // ---------------------------------------
     useEffect(() => {
         const handlePlayerNew = (p) => {
             console.log("Player joined:", p);
@@ -132,7 +126,7 @@ const VirtualOffice = () => {
     }, []);
 
     // ---------------------------------------
-    // Remote player movement + proximity-based WebRTC
+    // Remote player movement + proximity-based WebRTC (volume + pan)
     // ---------------------------------------
     useEffect(() => {
         const handlePlayerMoved = ({ userId, x, y }) => {
@@ -148,15 +142,23 @@ const VirtualOffice = () => {
             const dist = Math.hypot(player.current.x - x, player.current.y - y);
 
             if (dist <= PROXIMITY_RADIUS) {
-            if (!peerExists(userId)) {
-                if (socket.id < userId) callPeer(userId, attachRemoteAudio);
-            }
-            // linear falloff: 1.0 at distance 0, 0.0 at the radius edge
-            const volume = 1 - dist / PROXIMITY_RADIUS;
-            setRemoteVolume(userId, volume);
+                if (!peerExists(userId) && socket.id < userId) {
+                    callPeer(userId, attachRemoteAudio);
+                }
+
+                // linear falloff: 1.0 at distance 0, 0.0 at the radius edge
+                const volume = 1 - dist / PROXIMITY_RADIUS;
+                setRemoteVolume(userId, volume);
+
+                // pan: negative = other player is to your left, positive = to your right
+                // (world-axis-relative — avatar has no facing direction, so this is
+                // simply screen-relative left/right, consistent with a top-down view)
+                const dx = x - player.current.x;
+                const pan = Math.max(-1, Math.min(1, dx / PROXIMITY_RADIUS));
+                setRemotePan(userId, pan);
             } else {
-            closePeer(userId);
-            removeRemoteAudio(userId);
+                closePeer(userId);
+                removeRemoteAudio(userId);
             }
         };
 
@@ -164,9 +166,6 @@ const VirtualOffice = () => {
         return () => socket.off("player:moved", handlePlayerMoved);
     }, []);
 
-    // ---------------------------------------
-    // Remote player left
-    // ---------------------------------------
     useEffect(() => {
         const handlePlayerLeft = ({ userId }) => {
             console.log("Player left:", userId);
@@ -179,9 +178,6 @@ const VirtualOffice = () => {
         return () => socket.off("player:left", handlePlayerLeft);
     }, []);
 
-    // ---------------------------------------
-    // Office rendering
-    // ---------------------------------------
     const drawOffice = (ctx, width, height) => {
         ctx.fillStyle = "#f1f5f9";
         ctx.fillRect(0, 0, width, height);
@@ -256,9 +252,6 @@ const VirtualOffice = () => {
         ctx.textAlign = "left";
     };
 
-    // ---------------------------------------
-    // Movement + game loop
-    // ---------------------------------------
     const updatePlayer = (deltaTime) => {
         const p = player.current;
         let dx = 0;
