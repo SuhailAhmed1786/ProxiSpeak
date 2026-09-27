@@ -46,5 +46,7 @@ const playerSchema = new mongoose.Schema(
   }
   
 );
+
+
 playerSchema.index({ location: "2dsphere" });
 module.exports = mongoose.model("Player", playerSchema);
