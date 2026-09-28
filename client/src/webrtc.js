@@ -1,29 +1,45 @@
 import socket from "./socket";
+
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-const gainNodes = {}; // userId -> GainNode
+const gainNodes = {};    // userId -> GainNode
+const pannerNodes = {};  // userId -> StereoPannerNode
 
 function setupAudioGraph(remoteUserId, stream) {
   const source = audioContext.createMediaStreamSource(stream);
   const gainNode = audioContext.createGain();
-  gainNode.gain.value = 1; // start at full volume
+  const pannerNode = audioContext.createStereoPanner();
 
-  source.connect(gainNode);
+  gainNode.gain.value = 1;     // start at full volume
+  pannerNode.pan.value = 0;    // start centered
+
+  // chain: source -> panner -> gain -> speakers
+  source.connect(pannerNode);
+  pannerNode.connect(gainNode);
   gainNode.connect(audioContext.destination);
 
   gainNodes[remoteUserId] = gainNode;
+  pannerNodes[remoteUserId] = pannerNode;
 }
 
 export function setRemoteVolume(remoteUserId, volume) {
   const gainNode = gainNodes[remoteUserId];
   if (gainNode) {
-    // clamp 0..1 just in case
     gainNode.gain.value = Math.max(0, Math.min(1, volume));
+  }
+}
+
+export function setRemotePan(remoteUserId, pan) {
+  const pannerNode = pannerNodes[remoteUserId];
+  if (pannerNode) {
+    pannerNode.pan.value = Math.max(-1, Math.min(1, pan));
   }
 }
 
 export function removeAudioGraph(remoteUserId) {
   delete gainNodes[remoteUserId];
+  delete pannerNodes[remoteUserId];
 }
+
 const peerConnections = {}; // userId -> RTCPeerConnection
 let localStream = null;
 
@@ -55,7 +71,7 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
   pc.ontrack = (event) => {
     const stream = event.streams[0];
     setupAudioGraph(remoteUserId, stream);
-    onRemoteStream(remoteUserId, stream); // keep this if you still want an <audio> el for autoplay purposes
+    onRemoteStream(remoteUserId, stream);
   };
 
   peerConnections[remoteUserId] = pc;
@@ -106,8 +122,13 @@ export function closePeer(remoteUserId) {
     pc.close();
     delete peerConnections[remoteUserId];
   }
+  removeAudioGraph(remoteUserId);
 }
 
 export function closeAllPeers() {
   Object.keys(peerConnections).forEach(closePeer);
+}
+
+export function peerExists(remoteUserId) {
+  return !!peerConnections[remoteUserId];
 }
