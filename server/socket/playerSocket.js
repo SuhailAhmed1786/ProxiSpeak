@@ -83,23 +83,28 @@ const playerSocket = (io) => {
         }
 
         const player = await Player.findOneAndUpdate(
-          { userId },
-          {
-            $set: {
-              socketId: socket.id,
-              x: playerX,
-              y: playerY,
-              location: {
+    { userId },
+    {
+        $set: {
+            x: Number(x),
+            y: Number(y),
+            socketId: socket.id,
+
+            location: {
                 type: "Point",
-                coordinates: [playerX, playerY],
-              },
+                coordinates: [
+                    Number(x),
+                    Number(y),
+                ],
             },
-          },
-          {
-            new: true,
-            runValidators: true,
-          }
-        );
+        },
+    },
+    {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+    }
+);
 
         if (!player) {
           console.error("Player not found:", userId);
