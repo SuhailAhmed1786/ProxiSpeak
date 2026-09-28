@@ -42,6 +42,8 @@ const VirtualOffice = () => {
                     remotePlayer
                 );
 
+                
+
                 if (distance <= PROXIMITY_DISTANCE) {
                     nearbyPlayers.push({
                         ...remotePlayer,
@@ -186,8 +188,6 @@ const VirtualOffice = () => {
 
     useEffect(() => {
         const handlePlayerLeave = (data) => {
-            console.log("Player left:", data.playerId);
-
             delete remotePlayers.current[data.playerId];
         };
 
@@ -596,4 +596,6 @@ const VirtualOffice = () => {
 };
 
 export default VirtualOffice;
+
+
 
