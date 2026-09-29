@@ -3,15 +3,16 @@ import socket from "../socket";
 
 const VirtualOffice = () => {
 
-     const remotePlayers = useRef({});
-   // Keyboard state
+    const remotePlayers = useRef({});
+    // Keyboard state
     const keys = useRef({});
     // Used to limit socket messages
     const lastEmitTime = useRef(0);
 
     const canvasRef = useRef(null);
+    const PROXIMITY_DISTANCE = 100;
 
-      // Player position
+    // Player position
     const player = useRef({
         x: 200,
         y: 200,
@@ -19,41 +20,63 @@ const VirtualOffice = () => {
         speed: 180,
         name: "Suhail",
     });
- 
-   
-    //socket connection
-    // useEffect(() => {
-    //     socket.on("connect", () => {
-    //         console.log("Connected to server:", socket.id);
-    //     });
 
-    //     return () => {
-    //         socket.off("connect");
-    //     };
-    // }, []);
+
+    const getDistance = (player1, player2) => {
+        const dx = player1.x - player2.x;
+        const dy = player1.y - player2.y;
+
+        return Math.sqrt(
+            dx * dx + dy * dy
+        );
+    };
+
+    const getNearbyPlayers = () => {
+        const nearbyPlayers = [];
+
+        Object.values(remotePlayers.current).forEach(
+            (remotePlayer) => {
+
+                const distance = getDistance(
+                    player.current,
+                    remotePlayer
+                );
+
+                
+
+                if (distance <= PROXIMITY_DISTANCE) {
+                    nearbyPlayers.push({
+                        ...remotePlayer,
+                        distance,
+                    });
+                }
+            }
+        );
+
+        return nearbyPlayers;
+    };
 
 
     useEffect(() => {
-    const handleConnect = () => {
-        console.log("Connected:", socket.id);
-        socket.emit("player:join", {
-            playerId: socket.id,
-            x: player.current.x,
-            y: player.current.y,
-            name: player.current.name,
-        });
-    };
+        const handleConnect = () => {
+            console.log("Connected:", socket.id);
+            socket.emit("player:join", {
+                playerId: socket.id,
+                x: player.current.x,
+                y: player.current.y,
+                name: player.current.name,
+            });
+        };
 
-    socket.on("connect", handleConnect);
+        socket.on("connect", handleConnect);
+        if (socket.connected) {
+            handleConnect();
+        }
 
-    if (socket.connected) {
-        handleConnect();
-    }
-
-    return () => {
-        socket.off("connect", handleConnect);
-    };
-}, []);
+        return () => {
+            socket.off("connect", handleConnect);
+        };
+    }, []);
 
 
     useEffect(() => {
@@ -74,36 +97,34 @@ const VirtualOffice = () => {
         };
     }, []);
 
-     // --------------------------------------------------
+    // --------------------------------------------------
     // GET EXISTING PLAYERS
     // --------------------------------------------------
 
     useEffect(() => {
-    const handlePlayersList = (players) => {
-        console.log("Existing players:", players);
+        const handlePlayersList = (players) => {
+            console.log("Existing players:", players);
+            remotePlayers.current = {};
+            players.forEach((remotePlayer) => {
+                if (remotePlayer.playerId === socket.id) {
+                    return;
+                }
 
-        remotePlayers.current = {};
+                remotePlayers.current[remotePlayer.playerId] = {
+                    x: remotePlayer.x,
+                    y: remotePlayer.y,
+                    radius: 20,
+                    name: remotePlayer.name || remotePlayer.playerId,
+                };
+            });
+        };
 
-        players.forEach((remotePlayer) => {
-            if (remotePlayer.playerId === socket.id) {
-                return;
-            }
+        socket.on("players:list", handlePlayersList);
 
-            remotePlayers.current[remotePlayer.playerId] = {
-                x: remotePlayer.x,
-                y: remotePlayer.y,
-                radius: 20,
-                name: remotePlayer.name || remotePlayer.playerId,
-            };
-        });
-    };
-
-    socket.on("players:list", handlePlayersList);
-
-    return () => {
-        socket.off("players:list", handlePlayersList);
-    };
-}, []);
+        return () => {
+            socket.off("players:list", handlePlayersList);
+        };
+    }, []);
 
     // NEW PLAYER JOINED
     // --------------------------------------------------
@@ -131,8 +152,8 @@ const VirtualOffice = () => {
         };
     }, []);
 
-   
- // REMOTE PLAYER MOVEMENT
+
+    // REMOTE PLAYER MOVEMENT
 
     useEffect(() => {
         const handlePlayerMove = (data) => {
@@ -161,14 +182,12 @@ const VirtualOffice = () => {
         };
     }, []);
 
-     // --------------------------------------------------
+    // --------------------------------------------------
     // REMOTE PLAYER LEFT
     // --------------------------------------------------
 
     useEffect(() => {
         const handlePlayerLeave = (data) => {
-            console.log("Player left:", data.playerId);
-
             delete remotePlayers.current[data.playerId];
         };
 
@@ -179,7 +198,7 @@ const VirtualOffice = () => {
         };
     }, []);
 
-     const drawOffice = (ctx, width, height) => {
+    const drawOffice = (ctx, width, height) => {
         // Background
         ctx.fillStyle = "#f1f5f9";
         ctx.fillRect(0, 0, width, height);
@@ -255,7 +274,7 @@ const VirtualOffice = () => {
     // Draw Avatar
     // ---------------------------------------
 
-   const drawAvatar = (ctx, user, isCurrentUser = false) => {
+    const drawAvatar = (ctx, user, isCurrentUser = false) => {
         if (!user) return;
 
         // Player circle
@@ -312,7 +331,7 @@ const VirtualOffice = () => {
     // Update Player Movement
     // ---------------------------------------
 
-     const updatePlayer = (deltaTime) => {
+    const updatePlayer = (deltaTime) => {
         const p = player.current;
 
         let dx = 0;
@@ -433,6 +452,55 @@ const VirtualOffice = () => {
                 sendPlayerPosition(currentTime);
             }
 
+            // Proximity detection
+            const nearbyPlayers = getNearbyPlayers();
+
+            if (nearbyPlayers.length > 0) {
+                console.log(
+                    "Nearby players:",
+                    nearbyPlayers
+                );
+            }
+
+            ctx.clearRect(
+                0,
+                0,
+                width,
+                height
+            );
+
+            drawOffice(
+                ctx,
+                width,
+                height
+            );
+
+            drawAvatar(
+                ctx,
+                player.current,
+                true
+            );
+
+            Object.values(remotePlayers.current).forEach(
+                (remotePlayer) => {
+
+                    const distance = getDistance(
+                        player.current,
+                        remotePlayer
+                    );
+
+                    const isNearby =
+                        distance <= PROXIMITY_DISTANCE;
+
+                    drawAvatar(
+                        ctx,
+                        remotePlayer,
+                        false,
+                        isNearby
+                    );
+                }
+            );
+
             // Clear canvas
             ctx.clearRect(
                 0,
@@ -479,7 +547,7 @@ const VirtualOffice = () => {
             );
         };
     }, []);
-   
+
     return (
         <div
             style={{
@@ -528,4 +596,6 @@ const VirtualOffice = () => {
 };
 
 export default VirtualOffice;
+
+
 

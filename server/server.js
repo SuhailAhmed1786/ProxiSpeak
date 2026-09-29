@@ -1,14 +1,27 @@
+<<<<<<< HEAD:server/server.js
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
 const { v4: uuidv4 } = require("uuid");
+=======
+>>>>>>> suhail:server/index.js
 
-const connectDB = require("./db");
-const Player = require("./models/Player");
+import express from "express";
+// const http = require("http");
+import http from "http";
+// const cors = require("cors");
+import cors from 'cors';
+// const Player = require("./models/Player");
+import Player from "./models/Player.js";
+import { Server } from "socket.io";
+import playerSocket from "./socket/playerSocket.js";
+// const { v4: uuidv4 } = require("uuid");
+import { v4 as uuidv4 } from "uuid";
+import connectDB from './db.js';
+// const connectDB = require("./db");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -21,9 +34,10 @@ const io = new Server(server, {
   },
 });
 
+
 // connect to MongoDB
 connectDB();
-
+playerSocket(io);
 
 io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
@@ -64,7 +78,13 @@ io.on("connection", (socket) => {
       const player = await Player.findOneAndUpdate(
         { userId: finalUserId },
         { userId: finalUserId, x, y, socketId: socket.id },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
+
+        console.log("Player joined:", {
+          userId: finalUserId,
+          x,
+          y
+        }),
       );
 
       // send the current full player list to the newly joined client
@@ -133,6 +153,7 @@ io.on("connection", (socket) => {
   }
 });
 
+<<<<<<< HEAD:server/server.js
 app.get("/api/players", async (req, res) => {
   try {
     const players = await Player.find({});
@@ -148,3 +169,9 @@ server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 //server.js
+=======
+server.listen(5000, () => {
+  console.log("Server running on port 5000");
+});
+
+>>>>>>> suhail:server/index.js
