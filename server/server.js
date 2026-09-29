@@ -153,7 +153,22 @@ app.get("/api/players", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch players" });
   }
 });
+async function gracefulShutdown() {
+  console.log("\nShutting down — clearing players...");
+  try {
+    await Player.deleteMany({});
+    console.log("Players cleared.");
+  } catch (err) {
+    console.error("Error clearing players on shutdown:", err);
+  } finally {
+    server.close(() => {
+      process.exit(0);
+    });
+  }
+}
 
+process.on("SIGINT", gracefulShutdown);   // Ctrl+C
+process.on("SIGTERM", gracefulShutdown);  // e.g. nodemon restart, some process managers
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

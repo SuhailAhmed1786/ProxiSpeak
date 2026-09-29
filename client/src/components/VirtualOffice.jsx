@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import socket from "../socket";
+import { getPersistentUserId } from "../socket";
 import {
     initLocalAudio,
     callPeer,
@@ -12,7 +13,7 @@ import {
 } from "../webrtc";
 
 const PROXIMITY_RADIUS = 100;
-
+const userId = getPersistentUserId();
 const VirtualOffice = () => {
     const remotePlayers = useRef({});
     const keys = useRef({});
@@ -51,9 +52,8 @@ const VirtualOffice = () => {
         });
 
         const handleConnect = () => {
-            console.log("Connected:", socket.id);
             socket.emit("player:join", {
-                userId: socket.id,
+                userId,               // stable across reconnects now
                 x: player.current.x,
                 y: player.current.y,
                 name: player.current.name,

@@ -54,7 +54,9 @@ export async function initLocalAudio() {
 
 function createPeerConnection(remoteUserId, onRemoteStream) {
   const pc = new RTCPeerConnection(ICE_SERVERS);
-
+    pc.onsignalingstatechange = () => {
+      console.log(`[${remoteUserId}] signaling state:`, pc.signalingState);
+  };
   localStream.getTracks().forEach((track) => {
     pc.addTrack(track, localStream);
   });
