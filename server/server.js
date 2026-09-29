@@ -1,11 +1,3 @@
-<<<<<<< HEAD:server/server.js
-const express = require("express");
-const http = require("http");
-const cors = require("cors");
-const { Server } = require("socket.io");
-const { v4: uuidv4 } = require("uuid");
-=======
->>>>>>> suhail:server/index.js
 
 import express from "express";
 // const http = require("http");
@@ -153,7 +145,6 @@ io.on("connection", (socket) => {
   }
 });
 
-<<<<<<< HEAD:server/server.js
 app.get("/api/players", async (req, res) => {
   try {
     const players = await Player.find({});
@@ -169,9 +160,3 @@ server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 //server.js
-=======
-server.listen(5000, () => {
-  console.log("Server running on port 5000");
-});
-
->>>>>>> suhail:server/index.js
