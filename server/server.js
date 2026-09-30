@@ -1,17 +1,11 @@
-
 import express from "express";
-// const http = require("http");
 import http from "http";
-// const cors = require("cors");
 import cors from 'cors';
-// const Player = require("./models/Player");
 import Player from "./models/Player.js";
 import { Server } from "socket.io";
 import playerSocket from "./socket/playerSocket.js";
-// const { v4: uuidv4 } = require("uuid");
 import { v4 as uuidv4 } from "uuid";
 import connectDB from './db.js';
-// const connectDB = require("./db");
 
 const app = express();
 app.use(cors());
