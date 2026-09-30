@@ -47,26 +47,20 @@ const VirtualOffice = () => {
     useEffect(() => {
         initLocalAudio().catch((err) => console.error("Mic access denied:", err));
 
-        setupSignalingListeners((remoteUserId, stream) => {
+        const cleanupSignaling = setupSignalingListeners((remoteUserId, stream) => {
             attachRemoteAudio(remoteUserId, stream);
         });
 
         const handleConnect = () => {
-            socket.emit("player:join", {
-                userId,               // stable across reconnects now
-                x: player.current.x,
-                y: player.current.y,
-                name: player.current.name,
-            });
+            socket.emit("player:join", { userId, x: player.current.x, y: player.current.y, name: player.current.name });
         };
 
         socket.on("connect", handleConnect);
-        if (socket.connected) {
-            handleConnect();
-        }
+        if (socket.connected) handleConnect();
 
         return () => {
             socket.off("connect", handleConnect);
+            cleanupSignaling();   // <-- this is the missing piece
             closeAllPeers();
         };
     }, []);

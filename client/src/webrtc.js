@@ -9,10 +9,9 @@ function setupAudioGraph(remoteUserId, stream) {
   const gainNode = audioContext.createGain();
   const pannerNode = audioContext.createStereoPanner();
 
-  gainNode.gain.value = 1;     // start at full volume
-  pannerNode.pan.value = 0;    // start centered
+  gainNode.gain.value = 1;
+  pannerNode.pan.value = 0;
 
-  // chain: source -> panner -> gain -> speakers
   source.connect(pannerNode);
   pannerNode.connect(gainNode);
   gainNode.connect(audioContext.destination);
@@ -54,9 +53,11 @@ export async function initLocalAudio() {
 
 function createPeerConnection(remoteUserId, onRemoteStream) {
   const pc = new RTCPeerConnection(ICE_SERVERS);
-    pc.onsignalingstatechange = () => {
-      console.log(`[${remoteUserId}] signaling state:`, pc.signalingState);
+
+  pc.onsignalingstatechange = () => {
+    console.log(`[${remoteUserId}] signaling state:`, pc.signalingState);
   };
+
   localStream.getTracks().forEach((track) => {
     pc.addTrack(track, localStream);
   });
@@ -81,7 +82,7 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
 }
 
 export async function callPeer(remoteUserId, onRemoteStream) {
-  if (peerConnections[remoteUserId]) return; // already connected/connecting
+  if (peerConnections[remoteUserId]) return;
 
   const pc = createPeerConnection(remoteUserId, onRemoteStream);
   const offer = await pc.createOffer();
@@ -90,24 +91,39 @@ export async function callPeer(remoteUserId, onRemoteStream) {
   socket.emit("webrtc:offer", { to: remoteUserId, offer });
 }
 
+// ---------------------------------------
+// REPLACED: now returns a cleanup function, and guards against
+// out-of-order / duplicate offer-answer handling via signalingState checks.
+// ---------------------------------------
 export function setupSignalingListeners(onRemoteStream) {
-  socket.on("webrtc:offer", async ({ from, offer }) => {
+  const handleOffer = async ({ from, offer }) => {
     const pc = peerConnections[from] || createPeerConnection(from, onRemoteStream);
+
+    if (pc.signalingState !== "stable") {
+      console.warn(`Ignoring offer from ${from}, signaling state is ${pc.signalingState}`);
+      return;
+    }
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
     socket.emit("webrtc:answer", { to: from, answer });
-  });
+  };
 
-  socket.on("webrtc:answer", async ({ from, answer }) => {
+  const handleAnswer = async ({ from, answer }) => {
     const pc = peerConnections[from];
     if (!pc) return;
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
-  });
 
-  socket.on("webrtc:ice-candidate", async ({ from, candidate }) => {
+    if (pc.signalingState !== "have-local-offer") {
+      console.warn(`Ignoring answer from ${from}, signaling state is ${pc.signalingState}`);
+      return;
+    }
+
+    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+  };
+
+  const handleIceCandidate = async ({ from, candidate }) => {
     const pc = peerConnections[from];
     if (!pc) return;
     try {
@@ -115,7 +131,17 @@ export function setupSignalingListeners(onRemoteStream) {
     } catch (err) {
       console.error("Error adding ICE candidate:", err);
     }
-  });
+  };
+
+  socket.on("webrtc:offer", handleOffer);
+  socket.on("webrtc:answer", handleAnswer);
+  socket.on("webrtc:ice-candidate", handleIceCandidate);
+
+  return () => {
+    socket.off("webrtc:offer", handleOffer);
+    socket.off("webrtc:answer", handleAnswer);
+    socket.off("webrtc:ice-candidate", handleIceCandidate);
+  };
 }
 
 export function closePeer(remoteUserId) {
