@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import socket from "../socket";
-import { getPersistentUserId } from "../socket";
+import socket, { getPersistentUserId } from "../socket";
 import {
     initLocalAudio,
     callPeer,
@@ -10,10 +9,14 @@ import {
     setRemoteVolume,
     setRemotePan,
     peerExists,
+    resumeAudioContext,
 } from "../webrtc";
 
-const PROXIMITY_RADIUS = 100;
-const userId = getPersistentUserId();
+const ENTER_RADIUS = 100;
+const EXIT_RADIUS = 120; // hysteresis gap — prevents rapid connect/disconnect flapping at the boundary
+
+const userId = getPersistentUserId(); // stable across reconnects, computed once at module load
+
 const VirtualOffice = () => {
     const remotePlayers = useRef({});
     const keys = useRef({});
@@ -44,6 +47,9 @@ const VirtualOffice = () => {
         if (audioEl) audioEl.remove();
     };
 
+    // ---------------------------------------
+    // Connection, join, WebRTC signaling setup
+    // ---------------------------------------
     useEffect(() => {
         initLocalAudio().catch((err) => console.error("Mic access denied:", err));
 
@@ -52,22 +58,33 @@ const VirtualOffice = () => {
         });
 
         const handleConnect = () => {
-            socket.emit("player:join", { userId, x: player.current.x, y: player.current.y, name: player.current.name });
+            socket.emit("player:join", {
+                userId,
+                x: player.current.x,
+                y: player.current.y,
+                name: player.current.name,
+            });
         };
 
         socket.on("connect", handleConnect);
-        if (socket.connected) handleConnect();
+        if (socket.connected) {
+            handleConnect();
+        }
 
         return () => {
             socket.off("connect", handleConnect);
-            cleanupSignaling();   // <-- this is the missing piece
+            cleanupSignaling();
             closeAllPeers();
         };
     }, []);
 
+    // ---------------------------------------
+    // Keyboard input
+    // ---------------------------------------
     useEffect(() => {
         const handleKeyDown = (event) => {
             keys.current[event.key.toLowerCase()] = true;
+            resumeAudioContext(); // browsers block audio until a user gesture happens
         };
         const handleKeyUp = (event) => {
             keys.current[event.key.toLowerCase()] = false;
@@ -82,13 +99,16 @@ const VirtualOffice = () => {
         };
     }, []);
 
+    // ---------------------------------------
+    // Existing players on join
+    // ---------------------------------------
     useEffect(() => {
         const handlePlayersCurrent = (players) => {
             console.log("Existing players:", players);
             remotePlayers.current = {};
 
             players.forEach((p) => {
-                if (p.userId === socket.id) return;
+                if (p.userId === userId) return; // skip self — compare against persistent userId
                 remotePlayers.current[p.userId] = {
                     x: p.x,
                     y: p.y,
@@ -102,10 +122,13 @@ const VirtualOffice = () => {
         return () => socket.off("players:current", handlePlayersCurrent);
     }, []);
 
+    // ---------------------------------------
+    // New player joined
+    // ---------------------------------------
     useEffect(() => {
         const handlePlayerNew = (p) => {
             console.log("Player joined:", p);
-            if (p.userId === socket.id) return;
+            if (p.userId === userId) return; // skip self
 
             remotePlayers.current[p.userId] = {
                 x: p.x,
@@ -123,55 +146,63 @@ const VirtualOffice = () => {
     // Remote player movement + proximity-based WebRTC (volume + pan)
     // ---------------------------------------
     useEffect(() => {
-        const handlePlayerMoved = ({ userId, x, y }) => {
-            if (userId === socket.id) return;
+        const handlePlayerMoved = ({ userId: remoteUserId, x, y }) => {
+            if (remoteUserId === userId) return; // skip self
 
-            if (!remotePlayers.current[userId]) {
-                remotePlayers.current[userId] = { x, y, radius: 20, name: userId };
+            if (!remotePlayers.current[remoteUserId]) {
+                remotePlayers.current[remoteUserId] = { x, y, radius: 20, name: remoteUserId };
             } else {
-                remotePlayers.current[userId].x = x;
-                remotePlayers.current[userId].y = y;
+                remotePlayers.current[remoteUserId].x = x;
+                remotePlayers.current[remoteUserId].y = y;
             }
 
             const dist = Math.hypot(player.current.x - x, player.current.y - y);
+            console.log(`dist to ${remoteUserId}: ${dist.toFixed(0)}, peerExists: ${peerExists(remoteUserId)}`); // ADD
 
-            if (dist <= PROXIMITY_RADIUS) {
-                if (!peerExists(userId) && socket.id < userId) {
-                    callPeer(userId, attachRemoteAudio);
+            if (dist <= ENTER_RADIUS) {
+                if (!peerExists(remoteUserId) && userId < remoteUserId) {
+                    callPeer(remoteUserId, attachRemoteAudio);
                 }
 
                 // linear falloff: 1.0 at distance 0, 0.0 at the radius edge
-                const volume = 1 - dist / PROXIMITY_RADIUS;
-                setRemoteVolume(userId, volume);
+                const volume = 1 - Math.min(dist, ENTER_RADIUS) / ENTER_RADIUS;
+                setRemoteVolume(remoteUserId, volume);
 
                 // pan: negative = other player is to your left, positive = to your right
                 // (world-axis-relative — avatar has no facing direction, so this is
                 // simply screen-relative left/right, consistent with a top-down view)
                 const dx = x - player.current.x;
-                const pan = Math.max(-1, Math.min(1, dx / PROXIMITY_RADIUS));
-                setRemotePan(userId, pan);
-            } else {
-                closePeer(userId);
-                removeRemoteAudio(userId);
+                const pan = Math.max(-1, Math.min(1, dx / ENTER_RADIUS));
+                setRemotePan(remoteUserId, pan);
+            } else if (dist > EXIT_RADIUS) {
+                closePeer(remoteUserId);
+                removeRemoteAudio(remoteUserId);
             }
+            // between ENTER_RADIUS and EXIT_RADIUS: leave existing call/volume as-is
         };
 
         socket.on("player:moved", handlePlayerMoved);
         return () => socket.off("player:moved", handlePlayerMoved);
     }, []);
 
+    // ---------------------------------------
+    // Remote player left
+    // ---------------------------------------
     useEffect(() => {
-        const handlePlayerLeft = ({ userId }) => {
-            console.log("Player left:", userId);
-            delete remotePlayers.current[userId];
-            closePeer(userId);
-            removeRemoteAudio(userId);
+        const handlePlayerLeft = ({ userId: remoteUserId }) => {
+            console.log("Player left:", remoteUserId);
+            delete remotePlayers.current[remoteUserId];
+            closePeer(remoteUserId);
+            removeRemoteAudio(remoteUserId);
         };
 
         socket.on("player:left", handlePlayerLeft);
         return () => socket.off("player:left", handlePlayerLeft);
     }, []);
 
+    // ---------------------------------------
+    // Office rendering
+    // ---------------------------------------
     const drawOffice = (ctx, width, height) => {
         ctx.fillStyle = "#f1f5f9";
         ctx.fillRect(0, 0, width, height);
@@ -246,6 +277,9 @@ const VirtualOffice = () => {
         ctx.textAlign = "left";
     };
 
+    // ---------------------------------------
+    // Movement + game loop
+    // ---------------------------------------
     const updatePlayer = (deltaTime) => {
         const p = player.current;
         let dx = 0;

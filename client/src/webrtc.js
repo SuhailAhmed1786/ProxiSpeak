@@ -5,6 +5,7 @@ const gainNodes = {};    // userId -> GainNode
 const pannerNodes = {};  // userId -> StereoPannerNode
 
 function setupAudioGraph(remoteUserId, stream) {
+  console.log(`[${remoteUserId}] setupAudioGraph called, tracks:`, stream.getAudioTracks()); // ADD
   const source = audioContext.createMediaStreamSource(stream);
   const gainNode = audioContext.createGain();
   const pannerNode = audioContext.createStereoPanner();
@@ -18,15 +19,15 @@ function setupAudioGraph(remoteUserId, stream) {
 
   gainNodes[remoteUserId] = gainNode;
   pannerNodes[remoteUserId] = pannerNode;
+  console.log(`[${remoteUserId}] audio graph ready, context state:`, audioContext.state); // ADD
 }
-
 export function setRemoteVolume(remoteUserId, volume) {
   const gainNode = gainNodes[remoteUserId];
+  console.log(`[${remoteUserId}] setRemoteVolume(${volume}) — gainNode exists:`, !!gainNode); // ADD
   if (gainNode) {
     gainNode.gain.value = Math.max(0, Math.min(1, volume));
   }
 }
-
 export function setRemotePan(remoteUserId, pan) {
   const pannerNode = pannerNodes[remoteUserId];
   if (pannerNode) {
@@ -58,20 +59,26 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
     console.log(`[${remoteUserId}] signaling state:`, pc.signalingState);
   };
 
+  // ADD these two:
+  pc.oniceconnectionstatechange = () => {
+    console.log(`[${remoteUserId}] ICE connection state:`, pc.iceConnectionState);
+  };
+  pc.onconnectionstatechange = () => {
+    console.log(`[${remoteUserId}] connection state:`, pc.connectionState);
+  };
+
   localStream.getTracks().forEach((track) => {
     pc.addTrack(track, localStream);
   });
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
-      socket.emit("webrtc:ice-candidate", {
-        to: remoteUserId,
-        candidate: event.candidate,
-      });
+      socket.emit("webrtc:ice-candidate", { to: remoteUserId, candidate: event.candidate });
     }
   };
 
   pc.ontrack = (event) => {
+    console.log(`[${remoteUserId}] ontrack fired, streams:`, event.streams); // ADD THIS
     const stream = event.streams[0];
     setupAudioGraph(remoteUserId, stream);
     onRemoteStream(remoteUserId, stream);
@@ -80,7 +87,6 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
   peerConnections[remoteUserId] = pc;
   return pc;
 }
-
 export async function callPeer(remoteUserId, onRemoteStream) {
   if (peerConnections[remoteUserId]) return;
 
@@ -145,6 +151,7 @@ export function setupSignalingListeners(onRemoteStream) {
 }
 
 export function closePeer(remoteUserId) {
+  console.log(`[${remoteUserId}] closePeer called`); // ADD
   const pc = peerConnections[remoteUserId];
   if (pc) {
     pc.close();
@@ -159,4 +166,14 @@ export function closeAllPeers() {
 
 export function peerExists(remoteUserId) {
   return !!peerConnections[remoteUserId];
+}
+export function resumeAudioContext() {
+    console.log("resumeAudioContext called, current state:", audioContext.state);
+    if (audioContext.state === "suspended") {
+        audioContext.resume().then(() => {
+            console.log("AudioContext resumed, new state:", audioContext.state);
+        }).catch((err) => {
+            console.error("AudioContext resume failed:", err);
+        });
+    }
 }
