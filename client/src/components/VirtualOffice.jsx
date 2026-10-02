@@ -13,7 +13,6 @@ import {
 } from "../webrtc";
 
 const ENTER_RADIUS = 100;
-const EXIT_RADIUS = 120; // hysteresis gap — prevents rapid connect/disconnect flapping at the boundary
 
 const userId = getPersistentUserId(); // stable across reconnects, computed once at module load
 
@@ -37,6 +36,7 @@ const VirtualOffice = () => {
             audioEl = document.createElement("audio");
             audioEl.id = `audio-${remoteUserId}`;
             audioEl.autoplay = true;
+            audioEl.muted = true; // Web Audio graph handles actual output — avoid a double audio path
             document.body.appendChild(audioEl);
         }
         audioEl.srcObject = stream;
@@ -108,7 +108,7 @@ const VirtualOffice = () => {
             remotePlayers.current = {};
 
             players.forEach((p) => {
-                if (p.userId === userId) return; // skip self — compare against persistent userId
+                if (p.userId === userId) return;
                 remotePlayers.current[p.userId] = {
                     x: p.x,
                     y: p.y,
@@ -128,7 +128,7 @@ const VirtualOffice = () => {
     useEffect(() => {
         const handlePlayerNew = (p) => {
             console.log("Player joined:", p);
-            if (p.userId === userId) return; // skip self
+            if (p.userId === userId) return;
 
             remotePlayers.current[p.userId] = {
                 x: p.x,
@@ -144,10 +144,12 @@ const VirtualOffice = () => {
 
     // ---------------------------------------
     // Remote player movement + proximity-based WebRTC (volume + pan)
+    // Connection is established once and kept alive — never torn down
+    // just because of distance. Only volume/pan change with distance.
     // ---------------------------------------
     useEffect(() => {
         const handlePlayerMoved = ({ userId: remoteUserId, x, y }) => {
-            if (remoteUserId === userId) return; // skip self
+            if (remoteUserId === userId) return;
 
             if (!remotePlayers.current[remoteUserId]) {
                 remotePlayers.current[remoteUserId] = { x, y, radius: 20, name: remoteUserId };
@@ -157,28 +159,21 @@ const VirtualOffice = () => {
             }
 
             const dist = Math.hypot(player.current.x - x, player.current.y - y);
-            console.log(`dist to ${remoteUserId}: ${dist.toFixed(0)}, peerExists: ${peerExists(remoteUserId)}`); // ADD
 
-            if (dist <= ENTER_RADIUS) {
-                if (!peerExists(remoteUserId) && userId < remoteUserId) {
-                    callPeer(remoteUserId, attachRemoteAudio);
-                }
-
-                // linear falloff: 1.0 at distance 0, 0.0 at the radius edge
-                const volume = 1 - Math.min(dist, ENTER_RADIUS) / ENTER_RADIUS;
-                setRemoteVolume(remoteUserId, volume);
-
-                // pan: negative = other player is to your left, positive = to your right
-                // (world-axis-relative — avatar has no facing direction, so this is
-                // simply screen-relative left/right, consistent with a top-down view)
-                const dx = x - player.current.x;
-                const pan = Math.max(-1, Math.min(1, dx / ENTER_RADIUS));
-                setRemotePan(remoteUserId, pan);
-            } else if (dist > EXIT_RADIUS) {
-                closePeer(remoteUserId);
-                removeRemoteAudio(remoteUserId);
+            // establish connection once, the first time they're in range —
+            // not re-torn-down for every subsequent distance change
+            if (dist <= ENTER_RADIUS && !peerExists(remoteUserId) && userId < remoteUserId) {
+                callPeer(remoteUserId, attachRemoteAudio);
             }
-            // between ENTER_RADIUS and EXIT_RADIUS: leave existing call/volume as-is
+
+            // linear fade across the whole range: 1.0 at distance 0, 0.0 at ENTER_RADIUS and beyond
+            const volume = Math.max(0, 1 - dist / ENTER_RADIUS);
+            setRemoteVolume(remoteUserId, volume);
+
+            // pan: negative = other player is to your left, positive = to your right
+            const dx = x - player.current.x;
+            const pan = Math.max(-1, Math.min(1, dx / ENTER_RADIUS));
+            setRemotePan(remoteUserId, pan);
         };
 
         socket.on("player:moved", handlePlayerMoved);
@@ -186,7 +181,7 @@ const VirtualOffice = () => {
     }, []);
 
     // ---------------------------------------
-    // Remote player left
+    // Remote player left (actual disconnect) — only place connections are closed
     // ---------------------------------------
     useEffect(() => {
         const handlePlayerLeft = ({ userId: remoteUserId }) => {
