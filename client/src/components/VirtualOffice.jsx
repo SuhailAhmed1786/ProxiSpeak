@@ -29,7 +29,25 @@ const VirtualOffice = () => {
         speed: 180,
         name: "Suhail",
     });
+    const updateAudioForAllPeers = () => {
+        Object.entries(remotePlayers.current).forEach(([remoteUserId, remotePlayer]) => {
+            const dist = Math.hypot(
+                player.current.x - remotePlayer.x,
+                player.current.y - remotePlayer.y
+            );
 
+            if (dist <= ENTER_RADIUS && !peerExists(remoteUserId) && userId < remoteUserId) {
+                callPeer(remoteUserId, attachRemoteAudio);
+            }
+
+            const volume = Math.max(0, 1 - dist / ENTER_RADIUS);
+            setRemoteVolume(remoteUserId, volume);
+
+            const dx = remotePlayer.x - player.current.x;
+            const pan = Math.max(-1, Math.min(1, dx / ENTER_RADIUS));
+            setRemotePan(remoteUserId, pan);
+        });
+    };
     const attachRemoteAudio = (remoteUserId, stream) => {
         let audioEl = document.getElementById(`audio-${remoteUserId}`);
         if (!audioEl) {
@@ -157,23 +175,6 @@ const VirtualOffice = () => {
                 remotePlayers.current[remoteUserId].x = x;
                 remotePlayers.current[remoteUserId].y = y;
             }
-
-            const dist = Math.hypot(player.current.x - x, player.current.y - y);
-
-            // establish connection once, the first time they're in range —
-            // not re-torn-down for every subsequent distance change
-            if (dist <= ENTER_RADIUS && !peerExists(remoteUserId) && userId < remoteUserId) {
-                callPeer(remoteUserId, attachRemoteAudio);
-            }
-
-            // linear fade across the whole range: 1.0 at distance 0, 0.0 at ENTER_RADIUS and beyond
-            const volume = Math.max(0, 1 - dist / ENTER_RADIUS);
-            setRemoteVolume(remoteUserId, volume);
-
-            // pan: negative = other player is to your left, positive = to your right
-            const dx = x - player.current.x;
-            const pan = Math.max(-1, Math.min(1, dx / ENTER_RADIUS));
-            setRemotePan(remoteUserId, pan);
         };
 
         socket.on("player:moved", handlePlayerMoved);
@@ -330,7 +331,7 @@ const VirtualOffice = () => {
 
             const moved = updatePlayer(deltaTime);
             if (moved) sendPlayerPosition(currentTime);
-
+            updateAudioForAllPeers();
             ctx.clearRect(0, 0, width, height);
             drawOffice(ctx, width, height);
             drawAvatar(ctx, player.current, true);
