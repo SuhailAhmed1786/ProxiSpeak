@@ -20,47 +20,53 @@ const io = new Server(server, {
   },
 });
 
-
-// connect to MongoDB
 connectDB();
-playerSocket(io);
 
-io.on("connection", (socket) => {
-    console.log("Player connected:", socket.id);
+const PROXIMITY_RADIUS = 100;
+const socketToUser = {};      // socket.id -> userId
+const playerPositions = {};   // userId -> { x, y }
+const lastDbWrite = {};       // userId -> timestamp
 
-    socket.on("player:move", (position) => {
-        console.log("Player movement:", {
-            playerId: socket.id,
-            x: position.x,
-            y: position.y,
-        });
+function isNearby(userIdA, userIdB) {
+  const a = playerPositions[userIdA];
+  const b = playerPositions[userIdB];
+  if (!a || !b) return false;
 
-        // Send movement to other players
-        socket.broadcast.emit("player:move", {
-            playerId: socket.id,
-            x: position.x,
-            y: position.y,
-        });
-    });
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.hypot(dx, dy) <= PROXIMITY_RADIUS;
+}
 
-    socket.on("disconnect", () => {
-        console.log("Player disconnected:", socket.id);
-    });
-});
+function getSocketIdForUser(userId) {
+  return Object.keys(socketToUser).find(
+    (socketId) => socketToUser[socketId] === userId
+  );
+}
 
-// map socket.id -> userId, so we know who disconnected
-const socketToUser = {};
+async function removePlayer(socket) {
+  const userId = socketToUser[socket.id];
+  if (!userId) return;
+
+  try {
+    await Player.deleteOne({ userId });
+    delete socketToUser[socket.id];
+    delete playerPositions[userId];
+    delete lastDbWrite[userId];
+    io.emit("player:left", { userId });
+  } catch (err) {
+    console.error("removePlayer error:", err);
+  }
+}
 
 io.on("connection", (socket) => {
   console.log("Player connected:", socket.id);
 
-  // 1. Client explicitly joins with a userId (or we generate one)
   socket.on("player:join", async ({ userId, x = 0, y = 0 } = {}) => {
     const finalUserId = userId || uuidv4();
     socketToUser[socket.id] = finalUserId;
+    playerPositions[finalUserId] = { x, y };
 
     try {
-      // upsert: create if new, update socketId/position if reconnecting
       const player = await Player.findOneAndUpdate(
         { userId: finalUserId },
         { userId: finalUserId, x, y, socketId: socket.id },
@@ -73,22 +79,14 @@ io.on("connection", (socket) => {
         }),
       );
 
-      // send the current full player list to the newly joined client
       const allPlayers = await Player.find({});
       socket.emit("players:current", allPlayers);
-
-      // tell everyone else a new player joined
       socket.broadcast.emit("player:new", player);
-
-      // confirm to this client what their assigned id is
       socket.emit("player:joined", { userId: finalUserId, x, y });
     } catch (err) {
       console.error("player:join error:", err);
     }
   });
-
-  // 2. Movement updates
-  const lastDbWrite = {};
 
   socket.on("player:move", async ({ x, y }) => {
     const userId = socketToUser[socket.id];
@@ -99,10 +97,9 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // broadcast every frame for smooth motion
+    playerPositions[userId] = { x, y };
     socket.broadcast.emit("player:moved", { userId, x, y });
 
-    // persist to Mongo at most every 100ms per user
     const now = Date.now();
     if (!lastDbWrite[userId] || now - lastDbWrite[userId] > 100) {
       lastDbWrite[userId] = now;
@@ -114,29 +111,44 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 3. Explicit leave (optional — disconnect handles most cases)
   socket.on("player:leave", async () => {
     await removePlayer(socket);
   });
 
-  // 4. Disconnect
   socket.on("disconnect", async () => {
     console.log("Player disconnected:", socket.id);
     await removePlayer(socket);
   });
 
-  async function removePlayer(socket) {
-    const userId = socketToUser[socket.id];
-    if (!userId) return;
+  socket.on("webrtc:offer", ({ to, offer }) => {
+    const fromUserId = socketToUser[socket.id];
+    if (!fromUserId || !isNearby(fromUserId, to)) return;
 
-    try {
-      await Player.deleteOne({ userId });
-      delete socketToUser[socket.id];
-      io.emit("player:left", { userId });
-    } catch (err) {
-      console.error("removePlayer error:", err);
+    const targetSocketId = getSocketIdForUser(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("webrtc:offer", { from: fromUserId, offer });
     }
-  }
+  });
+
+  socket.on("webrtc:answer", ({ to, answer }) => {
+    const fromUserId = socketToUser[socket.id];
+    if (!fromUserId || !isNearby(fromUserId, to)) return;
+
+    const targetSocketId = getSocketIdForUser(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("webrtc:answer", { from: fromUserId, answer });
+    }
+  });
+
+  socket.on("webrtc:ice-candidate", ({ to, candidate }) => {
+    const fromUserId = socketToUser[socket.id];
+    if (!fromUserId || !isNearby(fromUserId, to)) return;
+
+    const targetSocketId = getSocketIdForUser(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("webrtc:ice-candidate", { from: fromUserId, candidate });
+    }
+  });
 });
 
 app.get("/api/players", async (req, res) => {
@@ -147,10 +159,23 @@ app.get("/api/players", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch players" });
   }
 });
+async function gracefulShutdown() {
+  console.log("\nShutting down — clearing players...");
+  try {
+    await Player.deleteMany({});
+    console.log("Players cleared.");
+  } catch (err) {
+    console.error("Error clearing players on shutdown:", err);
+  } finally {
+    server.close(() => {
+      process.exit(0);
+    });
+  }
+}
 
+process.on("SIGINT", gracefulShutdown);   // Ctrl+C
+process.on("SIGTERM", gracefulShutdown);  // e.g. nodemon restart, some process managers
 const PORT = process.env.PORT || 5000;
-
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-//server.js
