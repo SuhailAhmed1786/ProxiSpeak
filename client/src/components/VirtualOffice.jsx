@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import socket from "../socket";
 
 const VirtualOffice = () => {
-
     const remotePlayers = useRef({});
     // Keyboard state
     const keys = useRef({});
@@ -41,8 +40,6 @@ const VirtualOffice = () => {
                     player.current,
                     remotePlayer
                 );
-
-                
 
                 if (distance <= PROXIMITY_DISTANCE) {
                     nearbyPlayers.push({
