@@ -1,139 +1,156 @@
+
 import Player from "../models/Player.js";
 
 const playerSocket = (io) => {
   io.on("connection", (socket) => {
-    console.log("Player connected:", socket.id, Player.userId);
-    socket.on("player:join", async ({ userId, x = 100, y = 100 }) => {
-      try {
-        const playerX = Number(x);
-        const playerY = Number(y);
+    console.log("Player connected:", socket.id);
 
-        if (!userId) {
-          console.error("player:join: userId missing");
-          return;
-        }
+    // PLAYER JOIN
+    socket.on(
+      "player:join",
+      async ({ userId, x = 100, y = 100, name = "Player" }) => {
+        try {
+          const playerX = Number(x);
+          const playerY = Number(y);
 
-        if (!Number.isFinite(playerX) || !Number.isFinite(playerY)) {
-          console.error("player:join: Invalid coordinates", {
-            x,
-            y,
-          });
-          return;
-        }
+          if (!userId) {
+            console.error("player:join: userId missing");
+            return;
+          }
 
-        const player = await Player.findOneAndUpdate(
-          { userId },
-          {
-            $set: {
-              socketId: socket.id,
-              x: playerX,
-              y: playerY,
-              location: {
-                type: "Point",
-                coordinates: [playerX, playerY],
+          if (
+            !Number.isFinite(playerX) ||
+            !Number.isFinite(playerY)
+          ) {
+            console.error("player:join: Invalid coordinates");
+            return;
+          }
+
+          // Save or update player
+          const player = await Player.findOneAndUpdate(
+            { userId },
+            {
+              $set: {
+                socketId: socket.id,
+                x: playerX,
+                y: playerY,
+              },
+              $setOnInsert: {
+                userId,
               },
             },
-            $setOnInsert: {
-              userId,
-            },
-          },
-          {
-            new: true,
-            upsert: true,
-            runValidators: true,
-          }
-        );
+            {
+              new: true,
+              upsert: true,
+              runValidators: true,
+              setDefaultsOnInsert: true,
+            }
+          );
 
-        console.log("JOIN SAVED:", {
-          userId,
-          x: playerX,
-          y: playerY,
-          coordinates: player.location.coordinates,
-        });
-
-      } catch (error) {
-        console.error("player:join error:", error);
-      }
-    });
-
-    socket.on("player:move", async ({ userId, x, y }) => {
-      try {
-        const playerX = Number(x);
-        const playerY = Number(y);
-
-        console.log("MOVE RECEIVED:", {
-          userId,
-          x,
-          y,
-          playerX,
-          playerY,
-        });
-
-        if (!userId) {
-          console.error("player:move: userId missing");
-          return;
-        }
-
-        if (!Number.isFinite(playerX) || !Number.isFinite(playerY)) {
-          console.error("Invalid coordinates:", {
-            x,
-            y,
+          console.log("JOIN SAVED:", {
+            userId: player.userId,
+            x: player.x,
+            y: player.y,
           });
-          return;
+
+          // Send existing players to the new player
+          const existingPlayers = await Player.find({
+            socketId: { $ne: socket.id },
+          }).lean();
+
+          socket.emit(
+            "players:list",
+            existingPlayers.map((p) => ({
+              playerId: p.userId,
+              x: p.x,
+              y: p.y,
+              name: p.name || p.userId,
+            }))
+          );
+
+          // Notify other connected players
+          socket.broadcast.emit("player:join", {
+            playerId: userId,
+            x: playerX,
+            y: playerY,
+            name,
+          });
+        } catch (error) {
+          console.error("player:join error:", error);
         }
+      }
+    );
 
-        const player = await Player.findOneAndUpdate(
-          { userId },
-          {
-            $set: {
-              x: Number(x),
-              y: Number(y),
-              socketId: socket.id,
+    // PLAYER MOVEMENT
+    socket.on(
+      "player:move",
+      async ({ userId, x, y, name = "Player" }) => {
+        try {
+          const playerX = Number(x);
+          const playerY = Number(y);
 
-              location: {
-                type: "Point",
-                coordinates: [
-                  Number(x),
-                  Number(y),
-                ],
+          if (!userId) {
+            console.error("player:move: userId missing");
+            return;
+          }
+
+          if (
+            !Number.isFinite(playerX) ||
+            !Number.isFinite(playerY)
+          ) {
+            console.error("player:move: Invalid coordinates");
+            return;
+          }
+
+          const player = await Player.findOneAndUpdate(
+            { userId },
+            {
+              $set: {
+                x: playerX,
+                y: playerY,
+                socketId: socket.id,
+              },
+              $setOnInsert: {
+                userId,
               },
             },
-          },
-          {
-            upsert: true,
-            new: true,
-            setDefaultsOnInsert: true,
+            {
+              new: true,
+              upsert: true,
+              runValidators: true,
+              setDefaultsOnInsert: true,
+            }
+          );
+
+          if (!player) {
+            return;
           }
-        );
 
-        if (!player) {
-          console.error("Player not found:", userId);
-          return;
+          // Broadcast updated position to other players
+          socket.broadcast.emit("player:moved", {
+            playerId: userId,
+            x: playerX,
+            y: playerY,
+            name,
+          });
+        } catch (error) {
+          console.error("player:move error:", error);
         }
-
-        console.log("MONGO UPDATED:", {
-          userId: player.userId,
-          x: player.x,
-          y: player.y,
-          location: player.location,
-        });
-
-        socket.broadcast.emit("player:moved", {
-          userId,
-          x: playerX,
-          y: playerY,
-        });
-
-      } catch (error) {
-        console.error("player:move error:", error);
       }
-    });
+    );
 
+    // PLAYER DISCONNECT
     socket.on("disconnect", async () => {
       try {
-        await Player.findOneAndDelete({
+        const player = await Player.findOneAndDelete({
           socketId: socket.id,
         });
+
+        if (player) {
+          socket.broadcast.emit("player:leave", {
+            playerId: player.userId,
+          });
+        }
 
         console.log("Player disconnected:", socket.id);
       } catch (error) {

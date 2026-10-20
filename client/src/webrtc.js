@@ -5,11 +5,14 @@ const gainNodes = {};
 const pannerNodes = {};
 
 function setupAudioGraph(remoteUserId, stream) {
-  const source = audioContext.createMediaStreamSource(stream);
-  const gainNode = audioContext.createGain();
-  const pannerNode = audioContext.createStereoPanner();
+  // Avoid creating duplicate audio graphs for the same peer.
+  removeAudioGraph(remoteUserId);
 
-  gainNode.gain.value = 0;   // start muted — caller sets real volume once distance is known
+  const source = audioContext.createMediaStreamSource(stream);
+  const pannerNode = audioContext.createStereoPanner();
+  const gainNode = audioContext.createGain();
+
+  gainNode.gain.value = 0;
   pannerNode.pan.value = 0;
 
   source.connect(pannerNode);
@@ -18,6 +21,7 @@ function setupAudioGraph(remoteUserId, stream) {
 
   gainNodes[remoteUserId] = gainNode;
   pannerNodes[remoteUserId] = pannerNode;
+  audioSources[remoteUserId] = source;
 }
 
 export function setRemoteVolume(remoteUserId, volume) {
@@ -36,6 +40,15 @@ export function setRemotePan(remoteUserId, pan) {
 }
 
 export function removeAudioGraph(remoteUserId) {
+  try {
+    audioSources[remoteUserId]?.disconnect();
+    pannerNodes[remoteUserId]?.disconnect();
+    gainNodes[remoteUserId]?.disconnect();
+  } catch (error) {
+    console.warn("Audio graph cleanup:", error);
+  }
+
+  delete audioSources[remoteUserId];
   delete gainNodes[remoteUserId];
   delete pannerNodes[remoteUserId];
 }
