@@ -288,7 +288,6 @@ const VirtualOffice = () => {
         if (keys.current["d"] || keys.current["arrowright"]) dx += 1;
 
         if (dx === 0 && dy === 0) return false;
-
         const length = Math.sqrt(dx * dx + dy * dy);
         dx /= length;
         dy /= length;
@@ -311,7 +310,7 @@ const VirtualOffice = () => {
         socket.emit("player:move", {
             x: player.current.x,
             y: player.current.y,
-            name: player.current.name,
+            name: player.current.name
         });
     };
 
@@ -351,10 +350,12 @@ const VirtualOffice = () => {
 
     return (
         <div style={{ padding: "20px", textAlign: "center" }}>
+            
             <h2>Proxy Speak Virtual Office</h2>
             <p>
                 Use <strong>W A S D</strong> or <strong>Arrow Keys</strong> to move.
             </p>
+            {/* <h4>Distance: {player.current.y}</h4> */}
 
             <canvas
                 ref={canvasRef}
