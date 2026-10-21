@@ -3,25 +3,28 @@ import socket from "./socket";
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const gainNodes = {};
 const pannerNodes = {};
+const audioSources = {};
 
 function setupAudioGraph(remoteUserId, stream) {
-  // Avoid creating duplicate audio graphs for the same peer.
   removeAudioGraph(remoteUserId);
 
   const source = audioContext.createMediaStreamSource(stream);
   const pannerNode = audioContext.createStereoPanner();
   const gainNode = audioContext.createGain();
 
-  gainNode.gain.value = 0;
+  // TEMPORARY: use 1 to test remote audio
+  gainNode.gain.value = 1;
   pannerNode.pan.value = 0;
 
   source.connect(pannerNode);
   pannerNode.connect(gainNode);
   gainNode.connect(audioContext.destination);
 
+  audioSources[remoteUserId] = source;
   gainNodes[remoteUserId] = gainNode;
   pannerNodes[remoteUserId] = pannerNode;
-  audioSources[remoteUserId] = source;
+
+  console.log("Remote audio graph created:", remoteUserId);
 }
 
 export function setRemoteVolume(remoteUserId, volume) {
@@ -88,12 +91,25 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
     }
   };
 
-  pc.ontrack = (event) => {
-    const stream = event.streams[0];
-    setupAudioGraph(remoteUserId, stream);
-    onRemoteStream(remoteUserId, stream);
-  };
+  pc.ontrack = async (event) => {
+  console.log("REMOTE TRACK RECEIVED:", remoteUserId);
+  console.log("Track kind:", event.track.kind);
+  console.log("Track enabled:", event.track.enabled);
+  console.log("Track muted:", event.track.muted);
 
+  const stream = event.streams[0];
+
+  if (!stream) {
+    console.error("No remote stream received");
+    return;
+  }
+
+  console.log("Remote audio tracks:", stream.getAudioTracks());
+
+  setupAudioGraph(remoteUserId, stream);
+  await resumeAudioContext();
+  onRemoteStream(remoteUserId, stream);
+};
   peerConnections[remoteUserId] = pc;
   return pc;
 }
@@ -179,8 +195,10 @@ export function peerExists(remoteUserId) {
   return true;
 }
 
-export function resumeAudioContext() {
-  if (audioContext.state === "suspended") {
-    audioContext.resume();
+export async function resumeAudioContext() {
+  if (audioContext.state !== "running") {
+    await audioContext.resume();
   }
+
+  console.log("AudioContext state:", audioContext.state);
 }

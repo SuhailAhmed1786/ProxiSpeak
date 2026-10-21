@@ -67,11 +67,26 @@ const VirtualOffice = () => {
             if (!cleanupSignaling.current) {
                 cleanupSignaling.current =
                     setupSignalingListeners((remoteUserId, stream) => {
-                        console.log(
-                            "Remote audio stream received:",
-                            remoteUserId,
-                            stream
-                        );
+                        console.log("Remote audio received from:", remoteUserId);
+                        console.log("Audio tracks:", stream.getAudioTracks());
+
+                        let audio = document.getElementById(`remote-audio-${remoteUserId}`);
+
+                        if (!audio) {
+                            audio = document.createElement("audio");
+                            audio.id = `remote-audio-${remoteUserId}`;
+                            audio.autoplay = true;
+                            audio.playsInline = true;
+                            document.body.appendChild(audio);
+                        }
+
+                        audio.srcObject = stream;
+                        audio.muted = false;
+                        audio.volume = 1;
+
+                        audio.play().catch((error) => {
+                            console.error("Audio playback failed:", error);
+                        });
                     });
             }
 
