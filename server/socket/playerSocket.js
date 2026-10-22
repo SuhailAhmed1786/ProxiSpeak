@@ -5,6 +5,37 @@ const playerSocket = (io) => {
   io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
 
+    
+socket.on("webrtc:offer", ({ to, offer }) => {
+  console.log("WebRTC offer received from:", socket.id);
+  console.log("Relaying offer to:", to);
+
+  io.to(to).emit("webrtc:offer", {
+    from: socket.id,
+    offer,
+  });
+});
+
+socket.on("webrtc:answer", ({ to, answer }) => {
+  console.log("WebRTC answer received from:", socket.id);
+  console.log("Relaying answer to:", to);
+
+  io.to(to).emit("webrtc:answer", {
+    from: socket.id,
+    answer,
+  });
+});
+
+socket.on("webrtc:ice-candidate", ({ to, candidate }) => {
+  console.log("Relaying ICE candidate to:", to);
+
+  io.to(to).emit("webrtc:ice-candidate", {
+    from: socket.id,
+    candidate,
+  });
+});
+
+
     // PLAYER JOIN
     socket.on(
       "player:join",

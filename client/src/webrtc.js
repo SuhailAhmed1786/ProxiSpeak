@@ -17,8 +17,8 @@ function setupAudioGraph(remoteUserId, stream) {
   pannerNode.pan.value = 0;
 
   source.connect(pannerNode);
-  pannerNode.connect(gainNode);
-  gainNode.connect(audioContext.destination);
+pannerNode.connect(gainNode);
+gainNode.connect(audioContext.destination);
 
   audioSources[remoteUserId] = source;
   gainNodes[remoteUserId] = gainNode;
@@ -64,7 +64,19 @@ const ICE_SERVERS = {
 };
 
 export async function initLocalAudio() {
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  localStream = await navigator.mediaDevices.getUserMedia({
+    audio: true,
+  });
+
+  console.log(
+    "Local microphone tracks:",
+    localStream.getAudioTracks().map((track) => ({
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+    }))
+  );
+
   return localStream;
 }
 
@@ -75,8 +87,11 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
     console.log(`[${remoteUserId}] signaling state:`, pc.signalingState);
   };
   pc.oniceconnectionstatechange = () => {
-    console.log(`[${remoteUserId}] ICE connection state:`, pc.iceConnectionState);
-  };
+  console.log(
+    `[${remoteUserId}] ICE connection state:`,
+    pc.iceConnectionState
+  );
+};
   pc.onconnectionstatechange = () => {
     console.log(`[${remoteUserId}] connection state:`, pc.connectionState);
   };
@@ -91,30 +106,38 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
     }
   };
 
-  pc.ontrack = async (event) => {
-  console.log("REMOTE TRACK RECEIVED:", remoteUserId);
-  console.log("Track kind:", event.track.kind);
-  console.log("Track enabled:", event.track.enabled);
-  console.log("Track muted:", event.track.muted);
-
+ 
+pc.ontrack = (event) => {
   const stream = event.streams[0];
+  const track = event.track;
+
+  console.log("Remote track received:", remoteUserId);
+  console.log("Track state:", track.readyState);
+  console.log("Initially muted:", track.muted);
+
+  track.onunmute = () => {
+    console.log("REMOTE AUDIO UNMUTED:", remoteUserId);
+  };
+
+  track.onmute = () => {
+    console.warn("REMOTE AUDIO MUTED:", remoteUserId);
+  };
 
   if (!stream) {
     console.error("No remote stream received");
     return;
   }
 
-  console.log("Remote audio tracks:", stream.getAudioTracks());
-
   setupAudioGraph(remoteUserId, stream);
-  await resumeAudioContext();
   onRemoteStream(remoteUserId, stream);
 };
+
   peerConnections[remoteUserId] = pc;
   return pc;
 }
 
 export async function callPeer(remoteUserId, onRemoteStream) {
+  console.log("CREATING OFFER FOR:", remoteUserId);
   if (peerConnections[remoteUserId]) return;
 
   const pc = createPeerConnection(remoteUserId, onRemoteStream);
@@ -140,25 +163,34 @@ export function setupSignalingListeners(onRemoteStream) {
     socket.emit("webrtc:answer", { to: from, answer });
   };
 
-  const handleAnswer = async ({ from, answer }) => {
-    const pc = peerConnections[from];
-    if (!pc) return;
-    if (pc.signalingState !== "have-local-offer") {
-      console.warn(`Ignoring answer from ${from}, signaling state is ${pc.signalingState}`);
-      return;
-    }
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
-  };
+ const handleAnswer = async ({ from, answer }) => {
+  console.log("ANSWER RECEIVED FROM:", from);
 
-  const handleIceCandidate = async ({ from, candidate }) => {
-    const pc = peerConnections[from];
-    if (!pc) return;
-    try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (err) {
-      console.error("Error adding ICE candidate:", err);
-    }
-  };
+  const pc = peerConnections[from];
+
+  if (!pc) {
+    console.error("No peer connection found for:", from);
+    return;
+  }
+
+  console.log("State before answer:", pc.signalingState);
+
+  try {
+    await pc.setRemoteDescription(
+      new RTCSessionDescription(answer)
+    );
+
+    console.log("Answer applied. State:", pc.signalingState);
+  } catch (error) {
+    console.error("Failed to apply answer:", error);
+  }
+};
+
+const handleIceCandidate = async ({ from, candidate }) => {
+  console.log("ICE CANDIDATE RECEIVED FROM:", from);
+
+  // Keep your existing handleIceCandidate code below
+};
 
   socket.on("webrtc:offer", handleOffer);
   socket.on("webrtc:answer", handleAnswer);
