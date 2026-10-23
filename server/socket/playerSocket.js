@@ -5,7 +5,6 @@ const playerSocket = (io) => {
   io.on("connection", (socket) => {
     console.log("Player connected:", socket.id);
 
-    
 socket.on("webrtc:offer", ({ to, offer }) => {
   console.log("WebRTC offer received from:", socket.id);
   console.log("Relaying offer to:", to);

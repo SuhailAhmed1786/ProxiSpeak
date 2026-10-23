@@ -459,7 +459,7 @@ const VirtualOffice = () => {
                 const volume = getAudioVolume(distance);
 
                 if (peerExists(remoteId)) {
-                    setRemoteVolume(remoteId, volume);
+                   setRemoteVolume(remoteId, getAudioVolume(distance));
                 }
             });
 

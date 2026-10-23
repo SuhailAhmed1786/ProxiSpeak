@@ -68,14 +68,14 @@ export async function initLocalAudio() {
     audio: true,
   });
 
-  console.log(
-    "Local microphone tracks:",
-    localStream.getAudioTracks().map((track) => ({
-      enabled: track.enabled,
-      muted: track.muted,
-      readyState: track.readyState,
-    }))
-  );
+  const tracks = localStream.getAudioTracks();
+
+  console.log("LOCAL MICROPHONE:", tracks.map((track) => ({
+    enabled: track.enabled,
+    muted: track.muted,
+    readyState: track.readyState,
+    label: track.label,
+  })));
 
   return localStream;
 }
@@ -96,9 +96,19 @@ function createPeerConnection(remoteUserId, onRemoteStream) {
     console.log(`[${remoteUserId}] connection state:`, pc.connectionState);
   };
 
-  localStream.getTracks().forEach((track) => {
-    pc.addTrack(track, localStream);
-  });
+ localStream.getTracks().forEach((track) => {
+  pc.addTrack(track, localStream);
+});
+
+console.log(
+  "OUTGOING AUDIO SENDERS:",
+  pc.getSenders().map((sender) => ({
+    kind: sender.track?.kind,
+    enabled: sender.track?.enabled,
+    muted: sender.track?.muted,
+    readyState: sender.track?.readyState,
+  }))
+);
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -111,22 +121,17 @@ pc.ontrack = (event) => {
   const stream = event.streams[0];
   const track = event.track;
 
-  console.log("Remote track received:", remoteUserId);
+  console.log("Remote track received:", track.kind);
+  console.log("Track enabled:", track.enabled);
+  console.log("Track muted:", track.muted);
   console.log("Track state:", track.readyState);
-  console.log("Initially muted:", track.muted);
-
   track.onunmute = () => {
-    console.log("REMOTE AUDIO UNMUTED:", remoteUserId);
+    console.log("REMOTE AUDIO IS ACTIVE");
   };
 
   track.onmute = () => {
-    console.warn("REMOTE AUDIO MUTED:", remoteUserId);
+    console.warn("REMOTE AUDIO BECAME MUTED");
   };
-
-  if (!stream) {
-    console.error("No remote stream received");
-    return;
-  }
 
   setupAudioGraph(remoteUserId, stream);
   onRemoteStream(remoteUserId, stream);
@@ -187,9 +192,24 @@ export function setupSignalingListeners(onRemoteStream) {
 };
 
 const handleIceCandidate = async ({ from, candidate }) => {
-  console.log("ICE CANDIDATE RECEIVED FROM:", from);
+  const pc = peerConnections[from];
 
-  // Keep your existing handleIceCandidate code below
+  if (!pc || !pc.remoteDescription) {
+    if (!pendingIceCandidates[from]) {
+      pendingIceCandidates[from] = [];
+    }
+
+    pendingIceCandidates[from].push(candidate);
+    console.log("Queued ICE candidate from:", from);
+    return;
+  }
+
+  try {
+    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    console.log("ICE candidate added from:", from);
+  } catch (error) {
+    console.error("Error adding ICE candidate:", error);
+  }
 };
 
   socket.on("webrtc:offer", handleOffer);
