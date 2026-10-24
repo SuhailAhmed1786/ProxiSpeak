@@ -29,10 +29,18 @@ gainNode.connect(audioContext.destination);
 
 export function setRemoteVolume(remoteUserId, volume) {
   const gainNode = gainNodes[remoteUserId];
-  if (gainNode) {
-    // smooth ramp instead of an instant jump — avoids audible clicks/pops
-    gainNode.gain.setTargetAtTime(Math.max(0, Math.min(1, volume)), audioContext.currentTime, 0.05);
+
+  if (!gainNode) {
+    return;
   }
+
+  const safeVolume = Math.max(0, Math.min(1, volume));
+
+  gainNode.gain.setTargetAtTime(
+    safeVolume,
+    audioContext.currentTime,
+    0.05
+  );
 }
 
 export function setRemotePan(remoteUserId, pan) {
